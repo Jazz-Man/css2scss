@@ -12,7 +12,7 @@ const program = new Command();
 
 program
 	.name("css2scss")
-	.description("Convert CSS files to SCSS syntax (Bun optimized)")
+	.description("Convert CSS files to SCSS syntax with automatic nesting")
 	.version("1.0.0")
 	.argument("<input>", "Input CSS file or directory")
 	.argument(
@@ -23,8 +23,6 @@ program
 	.option("-w, --watch", "Watch mode for auto-conversion on changes", false)
 	.option("-o, --output <path>", "Output directory")
 	.option("--ext <extension>", "Output file extension", ".scss")
-	.option("--nest", "Enable automatic nesting", false)
-	.option("--nest-depth <number>", "Max nesting depth", "3")
 	.option("--variables", "Extract repeated values to variables", false)
 	.option("--var-threshold <number>", "Min repetitions for variable", "3")
 	.option("--group-properties", "Group properties with prefixes", false)
@@ -70,7 +68,7 @@ program
 	});
 
 async function runWatchMode(input, output, options) {
-	logger.info(`Watching ${input} for changes... (Bun native watch)`);
+	logger.info(`Watching ${input} for changes...`);
 
 	const watcher = Bun.watch(input, async (event, path) => {
 		if (path.endsWith(".css")) {
