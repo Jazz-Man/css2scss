@@ -1,0 +1,39 @@
+{
+	"name": "css2scss",
+	"version": "1.0.0",
+	"description": "Modern CLI utility for converting CSS to SCSS (Bun optimized)",
+	"type": "module",
+	"bin": {
+		"css2scss": "./bin/cli.js"
+	},
+	"main": "src/index.js",
+	"exports": {
+		".": "./src/index.js"
+	},
+	"scripts": {
+		"start": "bun run bin/cli.js",
+		"test": "bun test",
+		"build": "bun build bin/cli.js --compile --outfile css2scss"
+	},
+	"keywords": [
+		"css",
+		"scss",
+		"converter",
+		"cli",
+		"bun"
+	],
+	"author": "",
+	"license": "MIT",
+	"dependencies": {
+		"postcss": "^8.4.35",
+		"postcss-scss": "^4.0.9",
+		"commander": "^12.0.0",
+		"chalk": "^5.3.0"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.0.0"
+	},
+	"engines": {
+		"bun": ">=1.0.0"
+	}
+}
