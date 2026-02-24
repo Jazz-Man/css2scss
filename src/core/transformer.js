@@ -2,8 +2,6 @@ import postcss from "postcss";
 
 export function transform(root, options = {}) {
 	const {
-		nest = false,
-		nestDepth = 3,
 		variables = false,
 		varThreshold = 3,
 		groupProperties = false,
@@ -16,9 +14,8 @@ export function transform(root, options = {}) {
 		});
 	}
 
-	if (nest) {
-		root = applyNesting(root, nestDepth);
-	}
+	// Nesting завжди увімкнено з автоматичним визначенням глибини
+	root = applyNesting(root);
 
 	if (variables) {
 		extractVariables(root, varThreshold);
@@ -32,9 +29,12 @@ export function transform(root, options = {}) {
 }
 
 /**
- * Вкладення селекторів через побудову дерева даних
+ * Вкладення селекторів з автоматичним визначенням максимальної глибини
  */
-function applyNesting(root, maxDepth) {
+function applyNesting(root) {
+	// Крок 1: Визначаємо максимальну глибину вкладення з вхідного CSS
+	const maxDepth = detectMaxDepth(root);
+
 	const newRoot = postcss.root();
 
 	// Збираємо всі правила
@@ -74,6 +74,25 @@ function applyNesting(root, maxDepth) {
 	generateASTFromTree(tree, newRoot, 0);
 
 	return newRoot;
+}
+
+/**
+ * Автоматично визначає максимальну глибину вкладення з вхідного CSS
+ */
+function detectMaxDepth(root) {
+	let maxDepth = 1;
+
+	root.walkRules((rule) => {
+		const selector = rule.selector.split(",")[0].trim();
+		const parts = selector.split(/\s+/).filter((p) => p);
+
+		if (parts.length > maxDepth) {
+			maxDepth = parts.length;
+		}
+	});
+
+	// Обмежуємо розумним максимумом (щоб уникнути надмірного вкладення)
+	return Math.min(maxDepth, 5);
 }
 
 /**
@@ -223,26 +242,41 @@ function generateASTFromTree(tree, parent, depth) {
 				},
 			});
 
-			const nestedRule = postcss.rule({
-				selector: media.selector,
-				raws: {
-					before: `\n${indent}    `,
-					between: " {\n",
-					after: `\n${indent}    }`,
-				},
-			});
+			// Якщо selector це просто '&', додаємо декларації напряму в @media
+			if (media.selector === "&") {
+				for (const decl of media.decls) {
+					mediaRule.append(
+						postcss.decl({
+							prop: decl.prop,
+							value: decl.value,
+							raws: { before: `\n${indent}    `, between: ": " },
+						}),
+					);
+				}
+			} else {
+				// Інакше створюємо вкладене правило
+				const nestedRule = postcss.rule({
+					selector: media.selector,
+					raws: {
+						before: `\n${indent}    `,
+						between: " {\n",
+						after: `\n${indent}    }`,
+					},
+				});
 
-			for (const decl of media.decls) {
-				nestedRule.append(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						raws: { before: `\n${indent}      `, between: ": " },
-					}),
-				);
+				for (const decl of media.decls) {
+					nestedRule.append(
+						postcss.decl({
+							prop: decl.prop,
+							value: decl.value,
+							raws: { before: `\n${indent}      `, between: ": " },
+						}),
+					);
+				}
+
+				mediaRule.append(nestedRule);
 			}
 
-			mediaRule.append(nestedRule);
 			rule.append(mediaRule);
 		}
 

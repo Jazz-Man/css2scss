@@ -13,7 +13,7 @@ export async function convertCSS(cssString, options = {}) {
 }
 
 export async function convertFile(inputPath, outputPath, options = {}) {
-	// logger.verbose(`Processing file: ${inputPath}`);
+	logger.verbose(`Processing file: ${inputPath}`);
 
 	const cssContent = await readFile(inputPath);
 	const scssContent = await convertCSS(cssContent, options);
@@ -35,13 +35,12 @@ export async function convertFile(inputPath, outputPath, options = {}) {
 	await ensureDirectory(dirname(outputPath));
 	await writeFile(outputPath, scssContent);
 
-	// logger.verbose(`Written: ${outputPath}`);
+	logger.verbose(`Written: ${outputPath}`);
 
 	return { inputPath, outputPath, scssContent };
 }
 
 export async function convertDirectory(inputDir, outputDir, options = {}) {
-	// Bun.glob() - вбудована функція, швидша за glob пакет
 	const pattern = options.recursive
 		? join(inputDir, "**", "*.css")
 		: join(inputDir, "*.css");
