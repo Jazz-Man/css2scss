@@ -13,7 +13,7 @@ export async function convertCSS(cssString, options = {}) {
 }
 
 export async function convertFile(inputPath, outputPath, options = {}) {
-	logger.verbose(`Processing file: ${inputPath}`);
+	logger.log(`Processing file: ${inputPath}`);
 
 	const cssContent = await readFile(inputPath);
 	const scssContent = await convertCSS(cssContent, options);
@@ -35,7 +35,7 @@ export async function convertFile(inputPath, outputPath, options = {}) {
 	await ensureDirectory(dirname(outputPath));
 	await writeFile(outputPath, scssContent);
 
-	logger.verbose(`Written: ${outputPath}`);
+	logger.log(`Written: ${outputPath}`);
 
 	return { inputPath, outputPath, scssContent };
 }

@@ -1,28 +1,27 @@
 import chalk from "chalk";
 
-// Bun має вбудовані кольори, але chalk працює краще для крос-платформності
 class Logger {
 	constructor() {
-		this.verbose = false;
-		this.quiet = false;
+		this.isVerbose = false;
+		this.isQuiet = false;
 	}
 
 	setVerbose(value) {
-		this.verbose = value;
+		this.isVerbose = value;
 	}
 
 	setQuiet(value) {
-		this.quiet = value;
+		this.isQuiet = value;
 	}
 
 	info(message) {
-		if (!this.quiet) {
+		if (!this.isQuiet) {
 			console.log(chalk.blue("ℹ"), message);
 		}
 	}
 
 	success(message) {
-		if (!this.quiet) {
+		if (!this.isQuiet) {
 			console.log(chalk.green("✓"), message);
 		}
 	}
@@ -35,8 +34,8 @@ class Logger {
 		console.log(chalk.red("✗"), message);
 	}
 
-	verbose(message) {
-		if (this.verbose && !this.quiet) {
+	log(message) {
+		if (this.isVerbose && !this.isQuiet) {
 			console.log(chalk.gray("  →"), message);
 		}
 	}
