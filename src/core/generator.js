@@ -1,70 +1,47 @@
-import postcss from "postcss";
-import scssSyntax from "postcss-scss";
-
 export function generateSCSS(root, options = {}) {
 	const { indent = "space", indentSize = 2 } = options;
 
 	const indentChar = indent === "tab" ? "\t" : " ";
 	const indentString = indentChar.repeat(indentSize);
 
-	root.walkComments((comment) => {
-		comment.raws.left = " ";
-		comment.raws.right = " ";
+	// PostCSS вже має вбудований генератор, використовуємо його
+	const result = root.toResult({
+		syntax: {
+			stringify: (node, builder) => {
+				stringifyNode(node, builder, indentString, 0);
+			},
+		},
 	});
 
-	let result = "";
-
-	root.each((node) => {
-		result += nodeToString(node, indentString, 0) + "\n";
-	});
-
-	return result.trim();
+	return result.css;
 }
 
-function nodeToString(node, indent, depth) {
+function stringifyNode(node, builder, indent, depth) {
 	const currentIndent = indent.repeat(depth);
 
-	if (node.type === "decl") {
-		const isVariable = node.prop.startsWith("$");
-		return `${currentIndent}${node.prop}: ${node.value};`;
+	if (node.type === "root") {
+		node.each((child) => {
+			stringifyNode(child, builder, indent, depth);
+		});
 	}
 
 	if (node.type === "rule") {
-		let result = `${currentIndent}${node.selector} {\n`;
-
+		builder(`${currentIndent}${node.selector} {\n`);
 		node.each((child) => {
-			result += nodeToString(child, indent, depth + 1) + "\n";
+			stringifyNode(child, builder, indent, depth + 1);
 		});
+		builder(`${currentIndent}}`);
+	}
 
-		result += `${currentIndent}}`;
-		return result;
+	if (node.type === "decl") {
+		builder(`${currentIndent}${node.prop}: ${node.value};\n`);
 	}
 
 	if (node.type === "atrule") {
-		let result = `${currentIndent}@${node.name}`;
-
-		if (node.params) {
-			result += ` ${node.params}`;
-		}
-
-		if (node.nodes && node.nodes.length > 0) {
-			result += " {\n";
-
-			node.each((child) => {
-				result += `${nodeToString(child, indent, depth + 1)}\n`;
-			});
-
-			result += `${currentIndent}}`;
-		} else {
-			result += ";";
-		}
-
-		return result;
+		builder(`${currentIndent}@${node.name} ${node.params} {\n`);
+		node.each((child) => {
+			stringifyNode(child, builder, indent, depth + 1);
+		});
+		builder(`${currentIndent}}`);
 	}
-
-	if (node.type === "comment") {
-		return `${currentIndent}/* ${node.text} */`;
-	}
-
-	return "";
 }
