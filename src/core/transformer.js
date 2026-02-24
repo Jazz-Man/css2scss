@@ -17,8 +17,7 @@ export function transform(root, options = {}) {
 	}
 
 	if (nest) {
-		applyNesting(root, nestDepth);
-		cleanupEmptyAtRules(root);
+		applySmartNesting(root, nestDepth);
 	}
 
 	if (variables) {
@@ -33,173 +32,225 @@ export function transform(root, options = {}) {
 }
 
 /**
- * Видаляє порожні @media та інші at-rules після вкладення
+ * Розумне вкладення з побудовою дерева селекторів
  */
-function cleanupEmptyAtRules(root) {
+function applySmartNesting(root, maxDepth) {
+	// Крок 1: Збираємо всі правила та медіа-запити
+	const rules = [];
+	const mediaQueries = [];
+
+	root.walkRules((rule) => {
+		if (rule.parent.type === "atrule") {
+			mediaQueries.push({
+				rule,
+				media: rule.parent,
+				selector: rule.selector.split(",")[0].trim(),
+			});
+		} else {
+			rules.push({
+				rule,
+				selector: rule.selector.split(",")[0].trim(),
+			});
+		}
+	});
+
+	// Крок 2: Будуємо дерево селекторів
+	const tree = buildSelectorTree(rules, maxDepth);
+
+	// Крок 3: Очищаємо корінь від старих правил
+	rules.forEach(({ rule }) => {
+		if (rule.parent === root) {
+			rule.remove();
+		}
+	});
+
+	// Крок 4: Генеруємо нові вкладені правила з дерева
+	for (const [baseSelector, node] of tree) {
+		const baseRule = node.rule.clone();
+		baseRule.selector = baseSelector;
+
+		// Вкладаємо дочірні селектори
+		for (const child of node.children) {
+			const nestedRule = child.rule.clone();
+			nestedRule.selector = child.selector;
+			baseRule.append(nestedRule);
+		}
+
+		root.append(baseRule);
+	}
+
+	// Крок 5: Обробляємо медіа-запити - вкладаємо у відповідні селектори
+	for (const { rule, media, selector } of mediaQueries) {
+		const parts = selector.split(/\s+/).filter((p) => p);
+		const baseSelector = parts[0];
+
+		// Знаходимо батьківське правило в дереві
+		const targetNode = tree.get(baseSelector);
+
+		if (targetNode && targetNode.rule) {
+			// Створюємо копію медіа-запиту
+			const newMedia = postcss.atRule({
+				name: media.name,
+				params: media.params,
+				raws: { before: "\n  ", between: " {\n", after: "\n  }" },
+			});
+
+			// Вкладаємо правило всередину медіа-запиту
+			const nestedRule = rule.clone();
+			const nestedSelector = parts.length > 1 ? parts.slice(1).join(" ") : "&";
+			nestedRule.selector = nestedSelector.startsWith("&")
+				? nestedSelector
+				: `& ${nestedSelector}`;
+
+			newMedia.append(nestedRule);
+			targetNode.rule.append(newMedia);
+		}
+
+		// Видаляємо оригінальний медіа-запит якщо він порожній
+		if (media.nodes && media.nodes.length === 0) {
+			media.remove();
+		} else if (
+			media.nodes &&
+			media.nodes.every((n) => n.type === "rule" && !n.nodes)
+		) {
+			media.remove();
+		}
+	}
+
+	// Крок 6: Видаляємо порожні медіа-запити в корені
 	root.walkAtRules((atRule) => {
-		if (atRule.nodes && atRule.nodes.length === 0) {
+		if (
+			atRule.name === "media" &&
+			(!atRule.nodes || atRule.nodes.length === 0)
+		) {
 			atRule.remove();
 		}
 	});
 }
 
 /**
- * Покращений алгоритм вкладення з рекурсивною обробкою
+ * Будує дерево селекторів для вкладення
  */
-function applyNesting(root, maxDepth) {
-	// Крок 1: Збираємо всі правила з їхнім контекстом (включаючи @media)
-	const allRules = [];
+function buildSelectorTree(rules, maxDepth) {
+	const tree = new Map();
 
-	root.walkRules((rule) => {
-		allRules.push({
-			rule,
-			parent: rule.parent,
-			selector: rule.selector.split(",")[0].trim(),
-			isInsideMedia: rule.parent.type === "atrule",
-		});
-	});
+	// Спочатку додаємо всі базові селектори (перша частина)
+	for (const { rule, selector } of rules) {
+		const parts = selector.split(/\s+/).filter((p) => p);
+		const baseSelector = parts[0];
 
-	// Крок 2: Будуємо мапу селекторів для пошуку батьків
-	const selectorMap = new Map();
-
-	for (const item of allRules) {
-		// Ігноруємо правила всередині @media для пошуку батьків
-		if (!item.isInsideMedia) {
-			selectorMap.set(item.selector, item.rule);
+		if (!tree.has(baseSelector)) {
+			tree.set(baseSelector, {
+				rule: rule.clone(),
+				children: [],
+				depth: 1,
+			});
 		}
 	}
 
-	// Крок 3: Обробляємо правила з @media окремо
-	const mediaRules = allRules.filter((item) => item.isInsideMedia);
-	const regularRules = allRules.filter((item) => !item.isInsideMedia);
-
-	// Крок 4: Вкладаємо звичайні правила
-	for (const item of regularRules) {
-		const { rule, selector } = item;
+	// Потім вкладаємо дочірні селектори
+	for (const { rule, selector } of rules) {
 		const parts = selector.split(/\s+/).filter((p) => p);
 
-		if (parts.length > 1 && parts.length <= maxDepth) {
-			const parentSelector = parts[0];
-			const parentRule = selectorMap.get(parentSelector);
-
-			if (parentRule && parentRule !== rule) {
-				const nestedSelector = parts.slice(1).join(" ");
-				const finalSelector = nestedSelector.startsWith("&")
-					? nestedSelector
-					: `& ${nestedSelector}`;
-
-				const nestedRule = rule.clone();
-				nestedRule.selector = finalSelector;
-
-				parentRule.append(nestedRule);
-				rule.remove();
-			}
+		if (parts.length === 1) {
+			continue; // Це базовий селектор, вже доданий
 		}
-	}
 
-	// Крок 5: Вкладаємо правила з @media у відповідні батьківські селектори
-	for (const item of mediaRules) {
-		const { rule, selector } = item;
-		const parts = selector.split(/\s+/).filter((p) => p);
+		if (parts.length > maxDepth) {
+			continue; // Перевищено максимальну глибину
+		}
 
-		if (parts.length >= 1) {
-			const parentSelector = parts[0];
-			const parentRule = selectorMap.get(parentSelector);
+		const baseSelector = parts[0];
+		const parentNode = tree.get(baseSelector);
 
-			if (parentRule) {
-				// Клонуємо @media правило
-				const mediaRule = rule.parent.clone({
-					nodes: [],
+		if (parentNode) {
+			// Створюємо вкладений селектор
+			const nestedSelector = parts.slice(1).join(" ");
+
+			// Перевіряємо чи не дублюється вже такий селектор
+			const exists = parentNode.children.some(
+				(child) => child.selector === nestedSelector,
+			);
+
+			if (!exists) {
+				const clonedRule = rule.clone();
+				clonedRule.removeAll(); // Видаляємо дочірні елементи, залишаємо тільки декларації
+
+				parentNode.children.push({
+					rule: clonedRule,
+					selector: nestedSelector,
+					depth: parts.length,
 				});
-
-				// Створюємо вкладене правило всередині @media
-				const nestedSelector =
-					parts.length > 1 ? parts.slice(1).join(" ") : "&";
-
-				const finalSelector = nestedSelector.startsWith("&")
-					? nestedSelector
-					: `& ${nestedSelector}`;
-
-				const nestedRule = rule.clone();
-				nestedRule.selector = finalSelector;
-
-				mediaRule.append(nestedRule);
-				parentRule.append(mediaRule);
-				rule.remove();
 			}
 		}
 	}
 
-	// Крок 6: Рекурсивне вкладення для глибоких селекторів
-	applyRecursiveNesting(root, maxDepth);
+	// Рекурсивне вкладення для глибоких селекторів (3+ рівні)
+	applyRecursiveTreeNesting(tree, maxDepth);
+
+	return tree;
 }
 
 /**
- * Рекурсивно вкладає селектори для глибини 3+ рівнів
+ * Рекурсивно вкладає глибокі селектори один в одного
  */
-function applyRecursiveNesting(root, maxDepth, currentDepth = 1) {
-	if (currentDepth >= maxDepth) {
-		return;
-	}
+function applyRecursiveTreeNesting(tree, maxDepth) {
+	for (const [baseSelector, node] of tree) {
+		if (node.children.length === 0) continue;
 
-	const rules = [];
-	root.walkRules((rule) => {
-		rules.push(rule);
-	});
+		// Групуємо дітей за їхнім першим селектором
+		const childGroups = new Map();
 
-	const selectorMap = new Map();
-
-	for (const rule of rules) {
-		const selector = rule.selector.split(",")[0].trim();
-		if (!selector.startsWith("&")) {
-			selectorMap.set(selector, rule);
-		}
-	}
-
-	let madeChanges = false;
-
-	for (const rule of rules) {
-		const selector = rule.selector.split(",")[0].trim();
-
-		// Пропускаємо вже вкладені селектори на цьому рівні
-		if (selector.startsWith("&") || rule.parent.type === "atrule") {
-			continue;
+		for (const child of node.children) {
+			const parts = child.selector.split(/\s+/).filter((p) => p);
+			if (parts.length > 1) {
+				const firstPart = parts[0];
+				if (!childGroups.has(firstPart)) {
+					childGroups.set(firstPart, []);
+				}
+				childGroups.get(firstPart).push(child);
+			}
 		}
 
-		const parts = selector.split(/\s+/).filter((p) => p);
+		// Вкладаємо групи дітей
+		for (const [firstPart, children] of childGroups) {
+			// Знаходимо батьківський вузол для цієї групи
+			const parentChild = node.children.find(
+				(c) => c.selector === firstPart || c.selector === `& ${firstPart}`,
+			);
 
-		if (parts.length > 1) {
-			const parentSelector = parts.slice(0, parts.length - 1).join(" ");
-			const childPart = parts[parts.length - 1];
+			if (parentChild) {
+				for (const child of children) {
+					const parts = child.selector.split(/\s+/).filter((p) => p);
+					if (parts.length > 1) {
+						// Переміщуємо декларації з дитини в глибоко вкладений селектор
+						const nestedSelector = parts.slice(1).join(" ");
 
-			// Шукаємо батьківське правило (може бути вже вкладеним)
-			let parentRule = null;
+						const deepNestedRule = postcss.rule({
+							selector: nestedSelector.startsWith("&")
+								? nestedSelector
+								: `& ${nestedSelector}`,
+							raws: { before: "\n    ", between: " {\n", after: "\n  }" },
+						});
 
-			for (const [sel, r] of selectorMap) {
-				if (sel === parentSelector || parentSelector.endsWith(sel)) {
-					parentRule = r;
-					break;
+						// Копіюємо декларації
+						child.rule.walkDecls((decl) => {
+							deepNestedRule.append(decl.clone());
+						});
+
+						if (deepNestedRule.nodes.length > 0) {
+							parentChild.rule.append(deepNestedRule);
+						}
+
+						// Видаляємо оригінальну дитину з батька
+						const index = node.children.indexOf(child);
+						if (index > -1) {
+							node.children.splice(index, 1);
+						}
+					}
 				}
 			}
-
-			if (parentRule && parentRule !== rule) {
-				const finalSelector = childPart.startsWith("&")
-					? childPart
-					: `& ${childPart}`;
-
-				const nestedRule = rule.clone();
-				nestedRule.selector = finalSelector;
-
-				parentRule.append(nestedRule);
-				rule.remove();
-				madeChanges = true;
-			}
 		}
-	}
-
-	// Рекурсивний виклик якщо були зміни
-	if (madeChanges) {
-		applyRecursiveNesting(root, maxDepth, currentDepth + 1);
 	}
 }
 
