@@ -1,391 +1,231 @@
 import postcss from "postcss";
+import selectorParser from "postcss-selector-parser";
 
 export function transform(root, options = {}) {
-	const {
-		variables = false,
-		varThreshold = 3,
-		groupProperties = false,
-		comments = true,
-	} = options;
+	const { comments = true } = options;
 
 	if (!comments) {
-		root.walkComments((comment) => {
-			comment.remove();
-		});
+		root.walkComments((comment) => comment.remove());
 	}
 
-	// Nesting завжди увімкнено з автоматичним визначенням глибини
 	root = applyNesting(root);
-
-	if (variables) {
-		extractVariables(root, varThreshold);
-	}
-
-	if (groupProperties) {
-		groupPropertyPrefixes(root);
-	}
 
 	return root;
 }
 
-/**
- * Вкладення селекторів з автоматичним визначенням максимальної глибини
- */
 function applyNesting(root) {
-	// Крок 1: Визначаємо максимальну глибину вкладення з вхідного CSS
-	const maxDepth = detectMaxDepth(root);
-
 	const newRoot = postcss.root();
+	const selectorMap = new Map();
 
-	// Збираємо всі правила
-	const regularRules = [];
-	const mediaRules = [];
+	// Зберігаємо ВСІ at-rules
+	root.walkAtRules((atRule) => {
+		newRoot.append(atRule.clone());
+	});
 
+	// Збираємо правила
+	const rulesToProcess = [];
 	root.walkRules((rule) => {
-		const selector = rule.selector.split(",")[0].trim();
-		const parts = selector.split(/\s+/).filter((p) => p);
-
-		if (rule.parent.type === "atrule") {
-			const media = rule.parent;
-			mediaRules.push({
+		if (rule.parent.type === "root") {
+			rulesToProcess.push({
+				selector: rule.selector,
 				decls: collectDeclarations(rule),
-				mediaParams: media.params,
-				parts,
-				baseSelector: parts[0],
-			});
-		} else {
-			regularRules.push({
-				decls: collectDeclarations(rule),
-				parts,
-				baseSelector: parts[0],
 			});
 		}
 	});
 
-	// Будуємо дерево селекторів
-	const tree = buildSelectorTree(regularRules, maxDepth);
+	// Обробляємо кожне правило
+	for (const { selector, decls } of rulesToProcess) {
+		const allSelectors = selector
+			.split(",")
+			.map((s) => s.trim())
+			.filter((s) => s);
 
-	// Додаємо медіа-запити до відповідних вузлів дерева
-	for (const mediaRule of mediaRules) {
-		addMediaToTree(tree, mediaRule, maxDepth);
+		for (const fullSelector of allSelectors) {
+			const parsed = parseSelector(fullSelector);
+
+			if (parsed.length === 0) continue;
+
+			if (parsed.length === 1) {
+				addRuleToRoot(newRoot, parsed[0], decls, selectorMap);
+			} else {
+				const baseSelector = parsed[0];
+				const nestedSelector = parsed.slice(1).join(" ");
+
+				const parentRule = findOrCreateRule(newRoot, baseSelector, selectorMap);
+				if (parentRule) {
+					const finalSelector = buildNestedSelector(nestedSelector);
+
+					const existingNested = findNestedRule(parentRule, finalSelector);
+					let nestedRule = existingNested;
+
+					if (!nestedRule) {
+						nestedRule = postcss.rule({
+							selector: finalSelector,
+							raws: { before: "\n  ", between: " {\n", after: "\n  }" },
+						});
+						parentRule.append(nestedRule);
+					}
+
+					for (const decl of decls) {
+						nestedRule.append(
+							postcss.decl({
+								prop: decl.prop,
+								value: decl.value,
+								important: decl.important,
+								raws: { before: "\n    ", between: ": " },
+							}),
+						);
+					}
+				}
+			}
+		}
 	}
 
-	// Генеруємо новий AST з дерева
-	generateASTFromTree(tree, newRoot, 0);
+	// Переміщуємо декларації перед вкладеними правилами
+	newRoot.walkRules((rule) => {
+		if (rule.parent.type === "root") {
+			const decls = [];
+			const rules = [];
+
+			rule.each((node) => {
+				if (node.type === "decl") decls.push(node);
+				else if (node.type === "rule") rules.push(node);
+			});
+
+			if (decls.length > 0 && rules.length > 0) {
+				rule.removeAll();
+				decls.map((d) => rule.append(d));
+				rules.map((r) => rule.append(r));
+			}
+		}
+	});
 
 	return newRoot;
 }
 
-/**
- * Автоматично визначає максимальну глибину вкладення з вхідного CSS
- */
-function detectMaxDepth(root) {
-	let maxDepth = 1;
+// ✅ ВИПРАВЛЕНА ФУНКЦІЯ: Правильний парсинг селекторів
+function parseSelector(selector) {
+	const parts = [];
 
-	root.walkRules((rule) => {
-		const selector = rule.selector.split(",")[0].trim();
-		const parts = selector.split(/\s+/).filter((p) => p);
+	try {
+		selectorParser((ast) => {
+			ast.walk((node) => {
+				if (node.type === "root" || node.type === "selector") return;
 
-		if (parts.length > maxDepth) {
-			maxDepth = parts.length;
-		}
-	});
+				// Комбінатори — зберігаємо для правильного вкладення
+				if (node.type === "combinator") {
+					const value = node.value.trim();
+					if (value === ">" || value === "+" || value === "~") {
+						parts.push(value);
+					}
+					return;
+				}
 
-	// Обмежуємо розумним максимумом (щоб уникнути надмірного вкладення)
-	return Math.min(maxDepth, 5);
+				// Псевдо-класи та псевдо-елементи — БЕЗ пробілів
+				if (node.type === "pseudo") {
+					parts.push(node.toString());
+					return;
+				}
+
+				// Атрибути — БЕЗ зайвих пробілів
+				if (node.type === "attribute") {
+					const attr = node.toString().replace(/\s+/g, "");
+					parts.push(attr);
+					return;
+				}
+
+				// Класи, ID, теги
+				if (node.type === "class") {
+					parts.push(`.${node.value}`);
+				} else if (node.type === "id") {
+					parts.push(`#${node.value}`);
+				} else if (node.type === "tag") {
+					parts.push(node.value);
+				} else if (node.type === "universal") {
+					parts.push(node.value);
+				}
+			});
+		}).processSync(selector);
+	} catch (error) {
+		console.warn(`Selector parser fallback for: ${selector}`);
+		return selector.split(/\s+/).filter((p) => p);
+	}
+
+	return parts.filter((p) => p && p.trim() !== "");
 }
 
-/**
- * Збирає всі декларації з правила в масив
- */
+function buildNestedSelector(selector) {
+	if (selector.includes("&")) return selector;
+	if (selector.startsWith(":") || selector.startsWith("::"))
+		return "&" + selector;
+	if (selector.startsWith("[")) return "&" + selector;
+	if (
+		selector.startsWith(">") ||
+		selector.startsWith("+") ||
+		selector.startsWith("~")
+	)
+		return selector;
+	return selector;
+}
+
+function addRuleToRoot(root, selector, decls, selectorMap) {
+	let rule = selectorMap.get(selector);
+
+	if (!rule) {
+		rule = postcss.rule({
+			selector,
+			raws: { before: "\n", between: " {\n", after: "\n}" },
+		});
+		root.append(rule);
+		selectorMap.set(selector, rule);
+	}
+
+	for (const decl of decls) {
+		rule.append(
+			postcss.decl({
+				prop: decl.prop,
+				value: decl.value,
+				important: decl.important,
+				raws: { before: "\n  ", between: ": " },
+			}),
+		);
+	}
+}
+
+function findOrCreateRule(root, selector, selectorMap) {
+	let rule = selectorMap.get(selector);
+
+	if (!rule) {
+		rule = postcss.rule({
+			selector,
+			raws: { before: "\n", between: " {\n", after: "\n}" },
+		});
+		root.append(rule);
+		selectorMap.set(selector, rule);
+	}
+
+	return rule;
+}
+
+function findNestedRule(parentRule, selector) {
+	let found = null;
+	parentRule.walkRules((rule) => {
+		if (rule.selector === selector) {
+			found = rule;
+			return false;
+		}
+	});
+	return found;
+}
+
 function collectDeclarations(rule) {
 	const decls = [];
 	rule.walkDecls((decl) => {
 		decls.push({
 			prop: decl.prop,
 			value: decl.value,
-			raws: { ...decl.raws },
+			important: decl.important || false,
 		});
 	});
 	return decls;
-}
-
-/**
- * Будує дерево селекторів з правил
- */
-function buildSelectorTree(rules, maxDepth) {
-	const tree = new Map();
-
-	for (const { decls, parts, baseSelector } of rules) {
-		if (parts.length === 0) continue;
-		if (parts.length > maxDepth) continue;
-
-		// Створюємо базовий вузол якщо не існує
-		if (!tree.has(baseSelector)) {
-			tree.set(baseSelector, {
-				decls: [],
-				children: new Map(),
-				media: [],
-			});
-		}
-
-		const baseNode = tree.get(baseSelector);
-
-		// Якщо це базовий селектор (1 частина) - додаємо декларації до нього
-		if (parts.length === 1) {
-			baseNode.decls.push(...decls);
-		} else {
-			// Якщо це вкладений селектор - будуємо ланцюжок дітей
-			let currentNode = baseNode;
-
-			for (let i = 1; i < parts.length; i++) {
-				const part = parts[i];
-				const isLast = i === parts.length - 1;
-
-				if (!currentNode.children.has(part)) {
-					currentNode.children.set(part, {
-						decls: [],
-						children: new Map(),
-						media: [],
-					});
-				}
-
-				// Додаємо декларації тільки до кінцевого вузла
-				if (isLast) {
-					currentNode.children.get(part).decls.push(...decls);
-				}
-
-				currentNode = currentNode.children.get(part);
-			}
-		}
-	}
-
-	return tree;
-}
-
-/**
- * Додає медіа-запити до відповідних вузлів дерева
- */
-function addMediaToTree(tree, mediaRule, maxDepth) {
-	const { decls, mediaParams, parts, baseSelector } = mediaRule;
-
-	if (parts.length === 0) return;
-
-	const baseNode = tree.get(baseSelector);
-	if (!baseNode) return;
-
-	if (parts.length === 1) {
-		// Медіа для базового селектора
-		baseNode.media.push({
-			params: mediaParams,
-			decls,
-			selector: "&",
-		});
-	} else {
-		// Медіа для вкладеного селектора
-		let currentNode = baseNode;
-
-		for (let i = 1; i < parts.length; i++) {
-			const part = parts[i];
-			if (currentNode.children.has(part)) {
-				currentNode = currentNode.children.get(part);
-			} else {
-				return; // Шлях не існує
-			}
-		}
-
-		// Додаємо медіа до кінцевого вузла
-		currentNode.media.push({
-			params: mediaParams,
-			decls,
-			selector: "&",
-		});
-	}
-}
-
-/**
- * Генерує PostCSS AST з дерева селекторів
- */
-function generateASTFromTree(tree, parent, depth) {
-	const indent = "  ".repeat(depth);
-
-	for (const [selector, node] of tree) {
-		const rule = postcss.rule({
-			selector,
-			raws: {
-				before: depth === 0 ? "\n" : `\n${indent}`,
-				between: " {\n",
-				after: `\n${indent}}`,
-			},
-		});
-
-		// Додаємо декларації
-		for (const decl of node.decls) {
-			rule.append(
-				postcss.decl({
-					prop: decl.prop,
-					value: decl.value,
-					raws: { before: `\n${indent}  `, between: ": " },
-				}),
-			);
-		}
-
-		// Додаємо медіа-запити
-		for (const media of node.media) {
-			const mediaRule = postcss.atRule({
-				name: "media",
-				params: media.params,
-				raws: {
-					before: `\n${indent}  `,
-					between: " {\n",
-					after: `\n${indent}  }`,
-				},
-			});
-
-			// Якщо selector це просто '&', додаємо декларації напряму в @media
-			if (media.selector === "&") {
-				for (const decl of media.decls) {
-					mediaRule.append(
-						postcss.decl({
-							prop: decl.prop,
-							value: decl.value,
-							raws: { before: `\n${indent}    `, between: ": " },
-						}),
-					);
-				}
-			} else {
-				// Інакше створюємо вкладене правило
-				const nestedRule = postcss.rule({
-					selector: media.selector,
-					raws: {
-						before: `\n${indent}    `,
-						between: " {\n",
-						after: `\n${indent}    }`,
-					},
-				});
-
-				for (const decl of media.decls) {
-					nestedRule.append(
-						postcss.decl({
-							prop: decl.prop,
-							value: decl.value,
-							raws: { before: `\n${indent}      `, between: ": " },
-						}),
-					);
-				}
-
-				mediaRule.append(nestedRule);
-			}
-
-			rule.append(mediaRule);
-		}
-
-		// Рекурсивно додаємо дітей
-		if (node.children.size > 0) {
-			generateASTFromTree(node.children, rule, depth + 1);
-		}
-
-		parent.append(rule);
-	}
-}
-
-/**
- * Виділення повторюваних значень у змінні
- */
-function extractVariables(root, threshold) {
-	const valueMap = new Map();
-
-	root.walkDecls((decl) => {
-		const value = decl.value.trim();
-
-		if (value.startsWith("var(--")) {
-			return;
-		}
-
-		if (!valueMap.has(value)) {
-			valueMap.set(value, []);
-		}
-
-		valueMap.get(value).push(decl);
-	});
-
-	let varCounter = 1;
-
-	for (const [value, decls] of valueMap) {
-		if (decls.length >= threshold) {
-			const varName = `$auto-var-${varCounter++}`;
-
-			// Створюємо декларацію змінної
-			const varDecl = postcss.decl({
-				prop: varName,
-				value: value,
-				raws: { before: "\n", between: ": " },
-			});
-
-			root.prepend(varDecl);
-
-			// Замінюємо всі входження
-			for (const decl of decls) {
-				decl.value = varName;
-			}
-		}
-	}
-}
-
-/**
- * Групування властивостей з однаковими префіксами
- */
-function groupPropertyPrefixes(root) {
-	root.walkRules((rule) => {
-		const propsByPrefix = new Map();
-		const declsToRemove = [];
-
-		rule.walkDecls((decl) => {
-			const parts = decl.prop.split("-");
-			if (parts.length > 1) {
-				const prefix = parts[0];
-				if (!propsByPrefix.has(prefix)) {
-					propsByPrefix.set(prefix, []);
-				}
-				propsByPrefix.get(prefix).push(decl);
-			}
-		});
-
-		for (const [prefix, decls] of propsByPrefix) {
-			if (decls.length >= 2) {
-				const allSamePrefix = decls.every((d) =>
-					d.prop.startsWith(prefix + "-"),
-				);
-
-				if (allSamePrefix) {
-					const nestedRule = postcss.rule({
-						selector: prefix,
-						raws: {
-							before: "\n    ",
-							between: " {\n",
-							after: "\n  }",
-						},
-					});
-
-					for (const decl of decls) {
-						const suffix = decl.prop.replace(prefix + "-", "");
-						nestedRule.append(
-							postcss.decl({
-								prop: suffix,
-								value: decl.value,
-								raws: { before: "\n      ", between: ": " },
-							}),
-						);
-						declsToRemove.push(decl);
-					}
-
-					rule.append(nestedRule);
-				}
-			}
-		}
-
-		for (const decl of declsToRemove) {
-			decl.remove();
-		}
-	});
 }

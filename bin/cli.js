@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import chalk from "chalk";
 import { Command } from "commander";
 import { convertDirectory, convertFile } from "../src/index.js";
 import { logger } from "../src/utils/logger.js";
@@ -12,51 +11,52 @@ const program = new Command();
 
 program
 	.name("css2scss")
-	.description("Convert CSS files to SCSS syntax with automatic nesting")
+	.description(
+		"Convert CSS to SCSS with automatic nesting (100% data preservation)",
+	)
 	.version("1.0.0")
 	.argument("<input>", "Input CSS file or directory")
-	.argument(
-		"[output]",
-		"Output file or directory (default: replace .css with .scss)",
-	)
+	.argument("[output]", "Output file or directory (default: .css → .scss)")
 	.option("-r, --recursive", "Process directories recursively", false)
-	.option("-w, --watch", "Watch mode for auto-conversion on changes", false)
 	.option("-o, --output <path>", "Output directory")
-	.option("--ext <extension>", "Output file extension", ".scss")
-	.option("--variables", "Extract repeated values to variables", false)
-	.option("--var-threshold <number>", "Min repetitions for variable", "3")
-	.option("--group-properties", "Group properties with prefixes", false)
-	.option("--no-comments", "Remove comments", true)
-	.option("--indent <type>", "Indent type (space|tab)", "space")
-	.option("--indent-size <number>", "Indent size", "2")
-	.option("--dry-run", "Show result without writing", false)
-	.option("--diff", "Show diff between original and result", false)
+	.option("--ext <extension>", "Output extension", ".scss")
+	.option("--no-comments", "Remove comments", false)
 	.option("-v, --verbose", "Verbose output", false)
 	.option("-q, --quiet", "Quiet mode (errors only)", false)
 	.action(async (input, output, options) => {
+		const startTime = Date.now();
+
 		try {
 			logger.setVerbose(options.verbose);
 			logger.setQuiet(options.quiet);
 
-			const isDirectory = (await Bun.file(input).exists())
-				? (await Bun.file(input).type) === "directory"
-				: false;
-
-			if (options.watch && !isDirectory) {
-				logger.error("Watch mode only works with directories");
+			if (!input) {
+				logger.error("Input file/directory is required");
 				process.exit(1);
 			}
 
-			if (options.watch) {
-				await runWatchMode(input, output, options);
-			} else if (isDirectory) {
+			const file = Bun.file(input);
+			const exists = await file.exists();
+
+			if (!exists) {
+				logger.error(`File not found: ${input}`);
+				process.exit(1);
+			}
+
+			const fileType = await file.type;
+
+			const isDirectory = fileType === "directory";
+
+			if (isDirectory) {
 				await convertDirectory(input, output, options);
 			} else {
 				await convertFile(input, output, options);
 			}
 
+			const duration = Date.now() - startTime;
+
 			if (!options.quiet) {
-				logger.success("Conversion completed successfully!");
+				logger.success(`Conversion completed in ${duration}ms!`);
 			}
 		} catch (error) {
 			logger.error(`Conversion failed: ${error.message}`);
@@ -66,27 +66,5 @@ program
 			process.exit(1);
 		}
 	});
-
-async function runWatchMode(input, output, options) {
-	logger.info(`Watching ${input} for changes...`);
-
-	const watcher = Bun.watch(input, async (event, path) => {
-		if (path.endsWith(".css")) {
-			logger.info(`File ${event}: ${path}`);
-			try {
-				await convertFile(path, null, options);
-				logger.success(`Converted: ${path}`);
-			} catch (error) {
-				logger.error(`Failed to convert ${path}: ${error.message}`);
-			}
-		}
-	});
-
-	process.on("SIGINT", () => {
-		logger.info("\nStopping watch mode...");
-		watcher.stop();
-		process.exit(0);
-	});
-}
 
 program.parse();

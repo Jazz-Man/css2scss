@@ -1,47 +1,66 @@
 export function generateSCSS(root, options = {}) {
-	const { indent = "space", indentSize = 2 } = options;
+	let result = "";
 
-	const indentChar = indent === "tab" ? "\t" : " ";
-	const indentString = indentChar.repeat(indentSize);
-
-	// PostCSS вже має вбудований генератор, використовуємо його
-	const result = root.toResult({
-		syntax: {
-			stringify: (node, builder) => {
-				stringifyNode(node, builder, indentString, 0);
-			},
-		},
+	root.each((node) => {
+		const nodeStr = nodeToString(node, 0);
+		if (nodeStr) {
+			result += nodeStr + "\n";
+		}
 	});
 
-	return result.css;
+	return result.trim();
 }
 
-function stringifyNode(node, builder, indent, depth) {
-	const currentIndent = indent.repeat(depth);
+function nodeToString(node, depth) {
+	const indent = "  ".repeat(depth);
 
-	if (node.type === "root") {
-		node.each((child) => {
-			stringifyNode(child, builder, indent, depth);
-		});
+	if (node.type === "decl") {
+		const important = node.important ? " !important" : "";
+		return `${indent}${node.prop}: ${node.value}${important};`;
 	}
 
 	if (node.type === "rule") {
-		builder(`${currentIndent}${node.selector} {\n`);
-		node.each((child) => {
-			stringifyNode(child, builder, indent, depth + 1);
-		});
-		builder(`${currentIndent}}`);
-	}
+		let result = `${indent}${node.selector} {\n`;
 
-	if (node.type === "decl") {
-		builder(`${currentIndent}${node.prop}: ${node.value};\n`);
+		node.each((child) => {
+			const childStr = nodeToString(child, depth + 1);
+			if (childStr) {
+				result += childStr + "\n";
+			}
+		});
+
+		result += `${indent}}`;
+		return result;
 	}
 
 	if (node.type === "atrule") {
-		builder(`${currentIndent}@${node.name} ${node.params} {\n`);
-		node.each((child) => {
-			stringifyNode(child, builder, indent, depth + 1);
-		});
-		builder(`${currentIndent}}`);
+		let result = `${indent}@${node.name}`;
+
+		if (node.params) {
+			result += ` ${node.params}`;
+		}
+
+		if (node.nodes && node.nodes.length > 0) {
+			result += " {\n";
+
+			node.each((child) => {
+				const childStr = nodeToString(child, depth + 1);
+				if (childStr) {
+					result += childStr + "\n";
+				}
+			});
+
+			result += `${indent}}`;
+		} else {
+			result += ";";
+		}
+
+		return result;
 	}
+
+	if (node.type === "comment") {
+		return `${indent}/* ${node.text} */`;
+	}
+
+	return "";
 }

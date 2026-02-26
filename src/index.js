@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join } from "path";
 import { generateSCSS } from "./core/generator.js";
 import { parseCSS } from "./core/parser.js";
 import { transform } from "./core/transformer.js";
@@ -13,7 +13,7 @@ export async function convertCSS(cssString, options = {}) {
 }
 
 export async function convertFile(inputPath, outputPath, options = {}) {
-	logger.log(`Processing file: ${inputPath}`);
+	logger.log(`Processing: ${inputPath}`);
 
 	const cssContent = await readFile(inputPath);
 	const scssContent = await convertCSS(cssContent, options);
@@ -22,17 +22,7 @@ export async function convertFile(inputPath, outputPath, options = {}) {
 		outputPath = inputPath.replace(/\.css$/, ".scss");
 	}
 
-	if (options.dryRun) {
-		if (options.diff) {
-			showDiff(cssContent, scssContent, inputPath);
-		} else {
-			logger.info("Dry run - output:");
-			console.log(scssContent);
-		}
-		return { inputPath, outputPath, scssContent };
-	}
-
-	await ensureDirectory(dirname(outputPath));
+	ensureDirectory(dirname(outputPath));
 	await writeFile(outputPath, scssContent);
 
 	logger.log(`Written: ${outputPath}`);
@@ -80,25 +70,6 @@ export async function convertDirectory(inputDir, outputDir, options = {}) {
 	}
 
 	return results;
-}
-
-function showDiff(original, converted, filename) {
-	logger.info(`\n--- ${filename} (original)`);
-	logger.info(`+++ ${filename.replace(".css", ".scss")} (converted)\n`);
-
-	const origLines = original.split("\n");
-	const convLines = converted.split("\n");
-	const maxLines = Math.max(origLines.length, convLines.length);
-
-	for (let i = 0; i < maxLines; i++) {
-		const orig = origLines[i] || "";
-		const conv = convLines[i] || "";
-
-		if (orig !== conv) {
-			if (orig) logger.info(chalk.red(`- ${orig}`));
-			if (conv) logger.info(chalk.green(`+ ${conv}`));
-		}
-	}
 }
 
 export default {
