@@ -1,6 +1,12 @@
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 
+/**
+ *
+ * @param {import('postcss').Root} root
+ * @param {{comments: boolean}} options
+ * @returns {import('postcss').Root}
+ */
 export function transform(root, options = {}) {
 	const { comments = true } = options;
 
@@ -13,8 +19,16 @@ export function transform(root, options = {}) {
 	return root;
 }
 
+/**
+ *
+ * @param {import('postcss').Root} root
+ * @returns
+ */
 function applyNesting(root) {
+	/** @type {import('postcss').Root} */
 	const newRoot = postcss.root();
+
+	/** @type {Map<string, import('postcss').Rule>} */
 	const selectorMap = new Map();
 
 	// Зберігаємо ВСІ at-rules
@@ -22,7 +36,7 @@ function applyNesting(root) {
 		newRoot.append(atRule.clone());
 	});
 
-	// Збираємо правила
+	/** @type {Array<{ selector: string, decls: Array<import('postcss').Declaration> }>} */
 	const rulesToProcess = [];
 	root.walkRules((rule) => {
 		if (rule.parent.type === "root") {
@@ -103,7 +117,11 @@ function applyNesting(root) {
 	return newRoot;
 }
 
-// ✅ ВИПРАВЛЕНА ФУНКЦІЯ: Правильний парсинг селекторів
+/**
+ *
+ * @param {string} selector
+ * @returns
+ */
 function parseSelector(selector) {
 	const parts = [];
 
@@ -154,11 +172,18 @@ function parseSelector(selector) {
 	return parts.filter((p) => p && p.trim() !== "");
 }
 
+/**
+ *
+ * @param {string} selector
+ * @returns {string}
+ */
 function buildNestedSelector(selector) {
 	if (selector.includes("&")) return selector;
 	if (selector.startsWith(":") || selector.startsWith("::"))
-		return "&" + selector;
-	if (selector.startsWith("[")) return "&" + selector;
+		return `&${selector}`;
+	if (selector.startsWith("[")) {
+		return `&${selector}`;
+	}
 	if (
 		selector.startsWith(">") ||
 		selector.startsWith("+") ||
@@ -168,6 +193,13 @@ function buildNestedSelector(selector) {
 	return selector;
 }
 
+/**
+ *
+ * @param {import('postcss').Root} root
+ * @param {string} selector
+ * @param {import('postcss').Declaration[]>} decls
+ * @param {Map<string, import('postcss').Rule>} selectorMap
+ */
 function addRuleToRoot(root, selector, decls, selectorMap) {
 	let rule = selectorMap.get(selector);
 
@@ -192,6 +224,13 @@ function addRuleToRoot(root, selector, decls, selectorMap) {
 	}
 }
 
+/**
+ *
+ * @param {import('postcss').Root} root
+ * @param {string} selector
+ * @param {Map<string, import('postcss').Rule>} selectorMap
+ * @returns {import('postcss').Rule}
+ */
 function findOrCreateRule(root, selector, selectorMap) {
 	let rule = selectorMap.get(selector);
 
@@ -207,6 +246,12 @@ function findOrCreateRule(root, selector, selectorMap) {
 	return rule;
 }
 
+/**
+ *
+ * @param {import('postcss').Rule} parentRule
+ * @param {string} selector
+ * @returns {import('postcss').Rule|null}
+ */
 function findNestedRule(parentRule, selector) {
 	let found = null;
 	parentRule.walkRules((rule) => {
@@ -218,7 +263,13 @@ function findNestedRule(parentRule, selector) {
 	return found;
 }
 
+/**
+ *
+ * @param {import('postcss').Rule} rule
+ * @returns {import('postcss').Declaration[]}
+ */
 function collectDeclarations(rule) {
+	/** @type {import('postcss').Declaration[]} */
 	const decls = [];
 	rule.walkDecls((decl) => {
 		decls.push({
