@@ -1,12 +1,9 @@
 #!/usr/bin/env bun
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { convertDirectory, convertFile } from "../src/index.js";
 import { logger } from "../src/utils/logger.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const program = new Command();
 
 program
@@ -23,6 +20,14 @@ program
 	.option("--no-comments", "Remove comments", false)
 	.option("-v, --verbose", "Verbose output", false)
 	.option("-q, --quiet", "Quiet mode (errors only)", false)
+	/**
+	 * Converts a CSS file or directory to a SCSS file or directory.
+	 *
+	 * @param {string} input - The input CSS file or directory.
+	 * @param {string} output - The output SCSS file or directory.
+	 * @param {Object} options - The options for the conversion.
+	 * @returns {Promise<void>} A promise that resolves when the conversion is complete.
+	 */
 	.action(async (input, output, options) => {
 		const startTime = Date.now();
 

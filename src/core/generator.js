@@ -1,16 +1,29 @@
+/**
+ *
+ * @param {import('postcss').Root} root
+ * @param {*} options
+ * @returns
+ */
 export function generateSCSS(root, options = {}) {
 	let result = "";
 
 	root.each((node) => {
 		const nodeStr = nodeToString(node, 0);
 		if (nodeStr) {
-			result += nodeStr + "\n";
+			result += `${nodeStr}\n`;
 		}
 	});
 
 	return result.trim();
 }
 
+/**
+ * Converts a PostCSS node to a string representation.
+ *
+ * @param {import('postcss').Node} node - The PostCSS node to convert.
+ * @param {number} depth - The depth of the node in the tree.
+ * @returns {string} The string representation of the node.
+ */
 function nodeToString(node, depth) {
 	const indent = "  ".repeat(depth);
 
@@ -25,7 +38,7 @@ function nodeToString(node, depth) {
 		node.each((child) => {
 			const childStr = nodeToString(child, depth + 1);
 			if (childStr) {
-				result += childStr + "\n";
+				result += `${childStr}\n`;
 			}
 		});
 
@@ -46,7 +59,7 @@ function nodeToString(node, depth) {
 			node.each((child) => {
 				const childStr = nodeToString(child, depth + 1);
 				if (childStr) {
-					result += childStr + "\n";
+					result += `${childStr}\n`;
 				}
 			});
 

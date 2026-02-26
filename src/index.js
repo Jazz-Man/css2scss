@@ -5,6 +5,13 @@ import { transform } from "./core/transformer.js";
 import { ensureDirectory, readFile, writeFile } from "./utils/file.js";
 import { logger } from "./utils/logger.js";
 
+/**
+ * Converts a CSS string to a SCSS string.
+ *
+ * @param {string} cssString - The CSS string to convert.
+ * @param {Object} options - The options for the conversion.
+ * @returns {Promise<string>} The SCSS string.
+ */
 export async function convertCSS(cssString, options = {}) {
 	const ast = parseCSS(cssString);
 	const transformedAst = transform(ast, options);
@@ -12,6 +19,14 @@ export async function convertCSS(cssString, options = {}) {
 	return scssString;
 }
 
+/**
+ * Converts a CSS file to a SCSS file.
+ *
+ * @param {string} inputPath - The path to the CSS file to convert.
+ * @param {string} outputPath - The path to the output SCSS file.
+ * @param {Object} options - The options for the conversion.
+ * @returns {Promise<{ inputPath: string, outputPath: string, scssContent: string }>} The result of the conversion.
+ */
 export async function convertFile(inputPath, outputPath, options = {}) {
 	logger.log(`Processing: ${inputPath}`);
 
@@ -30,6 +45,14 @@ export async function convertFile(inputPath, outputPath, options = {}) {
 	return { inputPath, outputPath, scssContent };
 }
 
+/**
+ * Converts a directory of CSS files to a directory of SCSS files.
+ *
+ * @param {string} inputDir - The path to the directory containing CSS files to convert.
+ * @param {string} outputDir - The path to the output directory for SCSS files.
+ * @param {Object} options - The options for the conversion.
+ * @returns {Promise<Array<{ inputPath: string, outputPath: string, scssContent: string }>>} The results of the conversion.
+ */
 export async function convertDirectory(inputDir, outputDir, options = {}) {
 	const pattern = options.recursive
 		? join(inputDir, "**", "*.css")
