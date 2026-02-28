@@ -1,5 +1,9 @@
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
+import createSort from "sort-css-media-queries/create-sort";
+import debug from "../utils/debug";
+
+const sortCSSmq2 = createSort({ unitlessMqAlwaysFirst: true });
 
 /**
  *
@@ -14,9 +18,43 @@ export function transform(root, options = {}) {
 		root.walkComments((comment) => comment.remove());
 	}
 
+	const atRules = [];
+
+	/** @type {import('postcss').Root} */
+	// const newRoot = postcss.root();
+
+	root.walkAtRules("media", (atRule) => {
+		if (atRule.parent?.type === "root") {
+			const query = atRule.params;
+			if (!atRules[query]) {
+				atRules[query] = postcss.atRule({
+					name: atRule.name,
+					params: atRule.params,
+					source: atRule.source,
+				});
+			}
+
+			atRule.nodes.forEach((node) => {
+				atRules[query].append(node.clone());
+			});
+
+			atRule.remove();
+		}
+	});
+
+	// if (atRules) {
+	// 	sortAtRules(Object.keys(atRules)).forEach((query) => {
+	// 		// root.append(atRules[query]);
+	// 	});
+	// }
+
 	root = applyNesting(root);
 
 	return root;
+}
+
+function sortAtRules(queries) {
+	return queries.sort(sortCSSmq2);
 }
 
 /**
@@ -38,62 +76,209 @@ function applyNesting(root) {
 
 	/** @type {Array<{ selector: string, decls: Array<import('postcss').Declaration> }>} */
 	const rulesToProcess = [];
-	root.walkRules((rule) => {
-		if (rule.parent.type === "root") {
-			rulesToProcess.push({
-				selector: rule.selector,
-				decls: collectDeclarations(rule),
+
+	root.walkRules((cssRule, index) => {
+		if (cssRule.parent.type === "root") {
+			/** @type {Map<string, import('postcss').Rule>} */
+			const selectorMap = new Map();
+
+			selectorParser((selectorAst) => {
+				if (!selectorAst.source) {
+					return;
+				}
+
+				// комбіновані селектори, тобто  ".class-one,.class-two,.class-three, * >"
+				if (selectorAst.length > 1) {
+				} else {
+					if (selectorAst.first.length === 1) {
+						const baseRool = postcss.rule({
+							selector: selectorAst.first.toString(),
+						});
+
+						newRoot.append(baseRool);
+
+						cssRule.walkDecls((decl) => {
+							baseRool.append(decl.clone());
+						});
+
+						selectorMap.set(selectorAst.first.toString(), baseRool);
+					} else {
+						const rootSelector = selectorAst.first.toString();
+						const baseSelector = selectorAst.first.first.toString();
+
+						/** @type {import('postcss').Rule} */
+						const baseRule = selectorMap.has(baseSelector)
+							? selectorMap.get(baseSelector)
+							: postcss.rule({
+									selector: baseSelector,
+								});
+
+						newRoot.append(baseRule);
+
+						const rule = selectorAst.first.reduce(
+							(prevCssSelector, currentNode, currentIndex, array) => {
+								const selector = currentNode.toString().trim();
+								const prevType = currentNode.prev()?.type;
+								const nextType = currentNode.next()?.type;
+								const prevSelector = currentNode.prev()?.toString().trim();
+								const nextSelector = currentNode.next()?.toString().trim();
+								const hasPrev = prevSelector?.length > 0;
+								const hasNext = nextSelector?.length > 0;
+
+								debug({
+									selector,
+									prevType,
+									nextType,
+									prevSelector,
+									nextSelector,
+									hasPrev,
+									hasNext,
+								});
+
+								return prevCssSelector;
+							},
+							undefined,
+						);
+
+						// baseRule.append(rule);
+
+						// debug(rule);
+
+						// selectorAst.first.nodes.forEach((node, index) => {
+						// 	if (index === 0) {
+						// 		return;
+						// 	}
+						// 	debug(node.toString());
+						// });
+
+						// selectorAst.walk((node, index) => {
+						// 	switch (node.type) {
+						// 		case "selector":
+						// 			break;
+						// 		default: {
+						// 			const currentSelector = node.toString().trim();
+						// 			const prevType = node.prev()?.type;
+						// 			const nextType = node.next()?.type;
+						// 			const prevSelector = node.prev()?.toString().trim();
+						// 			const nextSelector = node.next()?.toString().trim();
+						// 			const hasPrev = prevSelector?.length > 0;
+						// 			const hasNext = nextSelector?.length > 0;
+						// 			const isOne = !hasPrev && !hasNext;
+						// 			if (isOne) {
+						// 				console.log({
+						// 					type: node.type,
+						// 					isOne,
+						// 					currentSelector,
+						// 					currentSelectorRaw: node.toString(),
+						// 					prevSelector,
+						// 					prevType,
+						// 					hasPrev,
+						// 					nextSelector,
+						// 					nextType,
+						// 					hasNext,
+						// 				});
+						// 			}
+						// 			// if (
+						// 			// 	typeof nextSelector === "undefined" ||
+						// 			// 	nextSelector?.length === 0
+						// 			// ) {
+						// 			// 	const newRoot = postcss.root();
+						// 			// 	const rule = postcss.rule({
+						// 			// 		selector: ".some-prev-selector",
+						// 			// 	});
+						// 			// 	const rule1 = postcss.rule({
+						// 			// 		selector: `&${currentSelector}`,
+						// 			// 	});
+						// 			// 	rule.append(rule1);
+						// 			// 	newRoot.append(rule);
+						// 			// 	cssRule.walkDecls((decl) => {
+						// 			// 		rule1.append(decl.clone());
+						// 			// 	});
+						// 			// 	// console.log(newRoot.toString());
+						// 			// }
+						// 			break;
+						// 		}
+						// 	}
+						// });
+					}
+				}
+			}).processSync(cssRule.selector, {
+				lossless: false,
 			});
+
+			// 	const parsed = parseSelector(rule.selector);
+			// 	const baseSelector = parsed.at(0);
+			// 	if (parsed.length === 1) {
+			// 		addRuleToRoot(
+			// 			newRoot,
+			// 			baseSelector,
+			// 			collectDeclarations(rule),
+			// 			selectorMap,
+			// 		);
+			// 	} else {
+			// 		const nestedSelector = parsed.slice(1).join(" ");
+			// 		const parentRule = findOrCreateRule(newRoot, baseSelector, selectorMap);
+			// 		if (parentRule) {
+			// 			const finalSelector = buildNestedSelector(nestedSelector);
+			// 			// console.log({ baseSelector, nestedSelector, finalSelector, parsed });
+			// 		}
+			// 	}
+			// 	// rulesToProcess.push({
+			// 	// 	selector: rule.selector,
+			// 	// 	decls: collectDeclarations(rule),
+			// 	// });
 		}
 	});
 
+	console.log(newRoot.toString());
+
 	// Обробляємо кожне правило
-	for (const { selector, decls } of rulesToProcess) {
-		const allSelectors = selector
-			.split(",")
-			.map((s) => s.trim())
-			.filter((s) => s);
+	// for (const { selector, decls } of rulesToProcess) {
+	// 	const allSelectors = selector
+	// 		.split(",")
+	// 		.map((s) => s.trim())
+	// 		.filter((s) => s);
 
-		for (const fullSelector of allSelectors) {
-			const parsed = parseSelector(fullSelector);
+	// 	for (const fullSelector of allSelectors) {
+	// 		const parsed = parseSelector(fullSelector);
 
-			if (parsed.length === 0) continue;
+	// 		if (parsed.length === 0) continue;
 
-			if (parsed.length === 1) {
-				addRuleToRoot(newRoot, parsed[0], decls, selectorMap);
-			} else {
-				const baseSelector = parsed[0];
-				const nestedSelector = parsed.slice(1).join(" ");
+	// 		if (parsed.length === 1) {
+	// 			addRuleToRoot(newRoot, parsed[0], decls, selectorMap);
+	// 		} else {
+	// 			const baseSelector = parsed[0];
+	// 			const nestedSelector = parsed.slice(1).join(" ");
 
-				const parentRule = findOrCreateRule(newRoot, baseSelector, selectorMap);
-				if (parentRule) {
-					const finalSelector = buildNestedSelector(nestedSelector);
+	// 			const parentRule = findOrCreateRule(newRoot, baseSelector, selectorMap);
+	// 			if (parentRule) {
+	// 				const finalSelector = buildNestedSelector(nestedSelector);
 
-					const existingNested = findNestedRule(parentRule, finalSelector);
-					let nestedRule = existingNested;
+	// 				const existingNested = findNestedRule(parentRule, finalSelector);
+	// 				let nestedRule = existingNested;
 
-					if (!nestedRule) {
-						nestedRule = postcss.rule({
-							selector: finalSelector,
-							raws: { before: "\n  ", between: " {\n", after: "\n  }" },
-						});
-						parentRule.append(nestedRule);
-					}
+	// 				if (!nestedRule) {
+	// 					nestedRule = postcss.rule({
+	// 						selector: finalSelector,
+	// 						raws: { before: "\n  ", between: " {\n", after: "\n  }" },
+	// 					});
+	// 					parentRule.append(nestedRule);
+	// 				}
 
-					for (const decl of decls) {
-						nestedRule.append(
-							postcss.decl({
-								prop: decl.prop,
-								value: decl.value,
-								important: decl.important,
-								raws: { before: "\n    ", between: ": " },
-							}),
-						);
-					}
-				}
-			}
-		}
-	}
+	// 				for (const decl of decls) {
+	// 					nestedRule.append(
+	// 						postcss.decl({
+	// 							prop: decl.prop,
+	// 							value: decl.value,
+	// 							important: decl.important,
+	// 							raws: { before: "\n    ", between: ": " },
+	// 						}),
+	// 					);
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 
 	// Переміщуємо декларації перед вкладеними правилами
 	newRoot.walkRules((rule) => {
@@ -120,56 +305,63 @@ function applyNesting(root) {
 /**
  *
  * @param {string} selector
- * @returns
+ * @returns {string[]}
  */
 function parseSelector(selector) {
+	/** @type {string[]} */
 	const parts = [];
 
 	try {
 		selectorParser((ast) => {
 			ast.walk((node) => {
-				if (node.type === "root" || node.type === "selector") return;
+				switch (node.type) {
+					// case "root":
+					case "selector": {
+						debug(node, {
+							showHidden: true,
+							colors: true,
+						});
 
-				// Комбінатори — зберігаємо для правильного вкладення
-				if (node.type === "combinator") {
-					const value = node.value.trim();
-					if (value === ">" || value === "+" || value === "~") {
-						parts.push(value);
+						break;
 					}
-					return;
-				}
+					// case "combinator":
+					// case "pseudo":
+					// case "attribute":
+					// case "class":
+					// case "id":
+					// case "tag": {
+					// 	const value = node.toString().trim();
+					// 	if (value.length === 0) {
+					// 		break;
+					// 	}
 
-				// Псевдо-класи та псевдо-елементи — БЕЗ пробілів
-				if (node.type === "pseudo") {
-					parts.push(node.toString());
-					return;
-				}
+					// 	parts.push(value);
 
-				// Атрибути — БЕЗ зайвих пробілів
-				if (node.type === "attribute") {
-					const attr = node.toString().replace(/\s+/g, "");
-					parts.push(attr);
-					return;
-				}
+					// 	break;
+					// }
+					// case "universal": {
+					// 	const value = node.toString().trim();
+					// 	if (value.length === 0) {
+					// 		break;
+					// 	}
 
-				// Класи, ID, теги
-				if (node.type === "class") {
-					parts.push(`.${node.value}`);
-				} else if (node.type === "id") {
-					parts.push(`#${node.value}`);
-				} else if (node.type === "tag") {
-					parts.push(node.value);
-				} else if (node.type === "universal") {
-					parts.push(node.value);
+					// 	parts.push(value);
+					// 	break;
+					// }
+					default:
+						// console.log(node.type);
+						break;
 				}
 			});
-		}).processSync(selector);
+		}).processSync(selector, {
+			lossless: false,
+		});
 	} catch (error) {
 		console.warn(`Selector parser fallback for: ${selector}`);
 		return selector.split(/\s+/).filter((p) => p);
 	}
 
-	return parts.filter((p) => p && p.trim() !== "");
+	return parts;
 }
 
 /**
@@ -206,7 +398,6 @@ function addRuleToRoot(root, selector, decls, selectorMap) {
 	if (!rule) {
 		rule = postcss.rule({
 			selector,
-			raws: { before: "\n", between: " {\n", after: "\n}" },
 		});
 		root.append(rule);
 		selectorMap.set(selector, rule);
@@ -218,7 +409,6 @@ function addRuleToRoot(root, selector, decls, selectorMap) {
 				prop: decl.prop,
 				value: decl.value,
 				important: decl.important,
-				raws: { before: "\n  ", between: ": " },
 			}),
 		);
 	}
@@ -237,7 +427,6 @@ function findOrCreateRule(root, selector, selectorMap) {
 	if (!rule) {
 		rule = postcss.rule({
 			selector,
-			raws: { before: "\n", between: " {\n", after: "\n}" },
 		});
 		root.append(rule);
 		selectorMap.set(selector, rule);
