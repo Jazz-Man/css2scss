@@ -2,37 +2,29 @@ import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 
 /**
- * Finds or creates a nested rule at the given path.
- * Only searches direct children, not all descendants.
+ * Find or create a rule at a given path.
  */
-function findOrCreateNestedRule(parent, path) {
-	if (path.length === 0) {
-		return parent;
-	}
+function findOrCreateRuleAtPath(root, path) {
+	let current = root;
 
-	const selector = path[0];
-	let existingChild = null;
-
-	// Only check direct children (nodes), not walkRules which goes deep
-	for (const node of parent.nodes) {
-		if (node.type === "rule" && node.selector === selector) {
-			existingChild = node;
-			break;
+	for (const selector of path) {
+		let found = null;
+		for (const node of current.nodes) {
+			if (node.type === "rule" && node.selector === selector) {
+				found = node;
+				break;
+			}
 		}
+
+		if (!found) {
+			found = postcss.rule({ selector });
+			current.append(found);
+		}
+
+		current = found;
 	}
 
-	if (existingChild) {
-		return findOrCreateNestedRule(existingChild, path.slice(1));
-	}
-
-	const newRule = postcss.rule({ selector });
-	parent.append(newRule);
-
-	if (path.length === 1) {
-		return newRule;
-	}
-
-	return findOrCreateNestedRule(newRule, path.slice(1));
+	return current;
 }
 
 /**
@@ -91,6 +83,14 @@ function isSimpleSelector(selector) {
 }
 
 /**
+ * Extract base without pseudo-classes
+ */
+function extractBaseWithoutPseudo(selector) {
+	const pseudoIndex = selector.indexOf(":");
+	return pseudoIndex > 0 ? selector.slice(0, pseudoIndex) : selector;
+}
+
+/**
  * Find the longest base selector that matches the start of a selector.
  */
 function findBaseMatch(selector, knownBases) {
@@ -102,7 +102,6 @@ function findBaseMatch(selector, knownBases) {
 		}
 		if (selector.startsWith(base)) {
 			const remainder = selector.slice(base.length);
-			// Check for chained class (.b), id (#b), or pseudo-class (:hover, :first-child, etc.)
 			if (remainder && (remainder[0] === "." || remainder[0] === "#" || remainder[0] === ":")) {
 				return { base, remainder };
 			}
@@ -113,258 +112,126 @@ function findBaseMatch(selector, knownBases) {
 }
 
 /**
- * Process rules outside of @media/@supports/etc.
+ * Parse selector into nesting path.
  */
-function processNormalRules(root, newRoot, parentMap, knownBases) {
-	root.walkRules((rule) => {
-		// Skip rules inside @media, @supports, etc.
-		if (rule.parent.type === "atrule") {
-			return;
-		}
+function parseSelectorPath(selectorStr, knownBases) {
+	const parts = splitBySpace(selectorStr);
+	const path = [];
 
-		const parts = splitBySpace(rule.selector);
-		if (parts.length === 0) {
-			newRoot.append(rule.clone());
-			return;
-		}
-
-		const firstPart = parts[0];
-		const baseMatch = findBaseMatch(firstPart, knownBases);
-
-		if (baseMatch && baseMatch.remainder) {
-			const { base, remainder } = baseMatch;
-			const chainedSelector = "&" + remainder;
-
-			let parentRule;
-			if (!parentMap.has(base)) {
-				parentRule = postcss.rule({ selector: base });
-				parentMap.set(base, parentRule);
-				newRoot.append(parentRule);
-			} else {
-				parentRule = parentMap.get(base);
-			}
-
-			const path = [chainedSelector, ...parts.slice(1)];
-			const targetRule = findOrCreateNestedRule(parentRule, path);
-
-			rule.walkDecls((decl) => {
-				targetRule.append(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					}),
-				);
-			});
-		} else if (parts.length === 1) {
-			const selector = parts[0];
-			let targetRule;
-			if (!parentMap.has(selector)) {
-				targetRule = postcss.rule({ selector });
-				parentMap.set(selector, targetRule);
-				newRoot.append(targetRule);
-			} else {
-				targetRule = parentMap.get(selector);
-			}
-			rule.walkDecls((decl) => {
-				targetRule.append(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					}),
-				);
-			});
+	for (const part of parts) {
+		const match = findBaseMatch(part, knownBases);
+		if (match && match.remainder) {
+			path.push(match.base);
+			path.push("&" + match.remainder);
 		} else {
-			const path = [];
-
-			for (let i = 0; i < parts.length; i++) {
-				const part = parts[i];
-				const chainMatch = findBaseMatch(part, knownBases);
-
-				if (chainMatch && chainMatch.remainder && i > 0) {
-					path.push(chainMatch.base);
-					path.push("&" + chainMatch.remainder);
-				} else {
-					path.push(part);
-				}
-			}
-
-			const base = path[0];
-			const children = path.slice(1);
-
-			let parentRule;
-			if (!parentMap.has(base)) {
-				parentRule = postcss.rule({ selector: base });
-				parentMap.set(base, parentRule);
-				newRoot.append(parentRule);
-			} else {
-				parentRule = parentMap.get(base);
-			}
-
-			const targetRule = findOrCreateNestedRule(parentRule, children);
-			rule.walkDecls((decl) => {
-				targetRule.append(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					}),
-				);
-			});
+			path.push(part);
 		}
-	});
+	}
+
+	return path;
 }
 
 /**
- * Converts flat CSS rules to nested SCSS structure.
+ * Sort rule nodes: decl -> atrule (@media) -> rule
+ */
+function sortRuleNodes(rule) {
+	const decls = [];
+	const atrules = [];
+	const childRules = [];
+
+	for (const node of rule.nodes) {
+		if (node.type === "decl") {
+			decls.push(node);
+		} else if (node.type === "atrule" && node.name === "media") {
+			atrules.push(node);
+		} else if (node.type === "rule") {
+			childRules.push(node);
+			// Recursively sort child rules
+			sortRuleNodes(node);
+		} else {
+			// Keep other nodes as is
+			decls.push(node);
+		}
+	}
+
+	rule.removeAll();
+
+	for (const node of decls) {
+		rule.append(node);
+	}
+
+	for (const node of atrules) {
+		rule.append(node);
+	}
+
+	for (const node of childRules) {
+		rule.append(node);
+	}
+}
+
+/**
+ * Converts flat CSS to nested SCSS with @media rules nested inside classes.
  */
 function applyNesting(root) {
 	const newRoot = postcss.root();
-	const parentMap = new Map();
-
-	// Collect base selectors (excluding @media rules)
-	// For selectors like .a:hover, we add .a to knownBases
 	const knownBases = new Set();
+
+	// Collect base selectors
 	root.walkRules((rule) => {
-		// Skip rules inside @media, @supports, etc.
-		if (rule.parent.type === "atrule") {
-			return;
-		}
 		const parts = splitBySpace(rule.selector);
 		if (parts.length > 0) {
-			const first = parts[0];
-			// Extract base without pseudo-classes (:hover, :first-child, etc.)
-			const pseudoIndex = first.indexOf(":");
-			const base = pseudoIndex > 0 ? first.slice(0, pseudoIndex) : first;
+			const base = extractBaseWithoutPseudo(parts[0]);
 			if (isSimpleSelector(base)) {
 				knownBases.add(base);
 			}
 		}
 	});
 
-	// Process normal rules (outside @media)
-	processNormalRules(root, newRoot, parentMap, knownBases);
+	// Process all rules
+	root.walkRules((rule) => {
+		const isInMedia = rule.parent.type === "atrule" && rule.parent.name === "media";
+		const mediaParams = isInMedia ? rule.parent.params : null;
 
-	// Process @media, @supports, etc. - apply nesting inside them
-	root.walkAtRules((atRule) => {
-		if (
-			atRule.name === "media" ||
-			atRule.name === "supports" ||
-			atRule.name === "container"
-		) {
-			// Create new atrule and process its rules with nesting
-			const newAtRule = postcss.atRule({
-				name: atRule.name,
-				params: atRule.params,
-			});
+		const path = parseSelectorPath(rule.selector, knownBases);
+		const targetRule = findOrCreateRuleAtPath(newRoot, path);
 
-			const mediaParentMap = new Map();
-
-			atRule.walkRules((rule) => {
-				const parts = splitBySpace(rule.selector);
-				if (parts.length === 0) {
-					newAtRule.append(rule.clone());
-					return;
+		if (isInMedia) {
+			// Create or find @media rule
+			let mediaRule = null;
+			for (const node of targetRule.nodes) {
+				if (node.type === "atrule" && node.name === "media" && node.params === mediaParams) {
+					mediaRule = node;
+					break;
 				}
-
-				const firstPart = parts[0];
-				const baseMatch = findBaseMatch(firstPart, knownBases);
-
-				if (baseMatch && baseMatch.remainder) {
-					const { base, remainder } = baseMatch;
-					const chainedSelector = "&" + remainder;
-
-					let parentRule;
-					if (!mediaParentMap.has(base)) {
-						parentRule = postcss.rule({ selector: base });
-						mediaParentMap.set(base, parentRule);
-						newAtRule.append(parentRule);
-					} else {
-						parentRule = mediaParentMap.get(base);
-					}
-
-					const path = [chainedSelector, ...parts.slice(1)];
-					const targetRule = findOrCreateNestedRule(parentRule, path);
-
-					rule.walkDecls((decl) => {
-						targetRule.append(
-							postcss.decl({
-								prop: decl.prop,
-								value: decl.value,
-								important: decl.important,
-							}),
-						);
-					});
-				} else if (parts.length === 1) {
-					const selector = parts[0];
-					let targetRule;
-					if (!mediaParentMap.has(selector)) {
-						targetRule = postcss.rule({ selector });
-						mediaParentMap.set(selector, targetRule);
-						newAtRule.append(targetRule);
-					} else {
-						targetRule = mediaParentMap.get(selector);
-					}
-					rule.walkDecls((decl) => {
-						targetRule.append(
-							postcss.decl({
-								prop: decl.prop,
-								value: decl.value,
-								important: decl.important,
-							}),
-						);
-					});
-				} else {
-					const path = [];
-
-					for (let i = 0; i < parts.length; i++) {
-						const part = parts[i];
-						const chainMatch = findBaseMatch(part, knownBases);
-
-						if (chainMatch && chainMatch.remainder && i > 0) {
-							path.push(chainMatch.base);
-							path.push("&" + chainMatch.remainder);
-						} else {
-							path.push(part);
-						}
-					}
-
-					const base = path[0];
-					const children = path.slice(1);
-
-					let parentRule;
-					if (!mediaParentMap.has(base)) {
-						parentRule = postcss.rule({ selector: base });
-						mediaParentMap.set(base, parentRule);
-						newAtRule.append(parentRule);
-					} else {
-						parentRule = mediaParentMap.get(base);
-					}
-
-					const targetRule = findOrCreateNestedRule(parentRule, children);
-					rule.walkDecls((decl) => {
-						targetRule.append(
-							postcss.decl({
-								prop: decl.prop,
-								value: decl.value,
-								important: decl.important,
-							}),
-						);
-					});
-				}
+			}
+			if (!mediaRule) {
+				mediaRule = postcss.atRule({
+					name: "media",
+					params: mediaParams,
+				});
+				targetRule.append(mediaRule);
+			}
+			rule.walkDecls((decl) => {
+				mediaRule.append(postcss.decl({
+					prop: decl.prop,
+					value: decl.value,
+					important: decl.important,
+				}));
 			});
-
-			newRoot.append(newAtRule);
 		} else {
-			// Other atrules - keep as is
-			newRoot.append(atRule.clone());
+			rule.walkDecls((decl) => {
+				targetRule.append(postcss.decl({
+					prop: decl.prop,
+					value: decl.value,
+					important: decl.important,
+				}));
+			});
 		}
 	});
 
-	// Preserve comments
-	root.walkComments((comment) => {
-		newRoot.append(comment.clone());
+	// Sort all nodes in correct order
+	newRoot.walkRules((rule) => {
+		sortRuleNodes(rule);
 	});
 
 	return newRoot;

@@ -1,5 +1,4 @@
 import { basename, dirname, join } from "node:path";
-import { generateSCSS } from "./core/generator.js";
 import { parseCSS } from "./core/parser.js";
 import { transform } from "./core/transformer.js";
 import { ensureDirectory, readFile, writeFile } from "./utils/file.js";
@@ -15,8 +14,8 @@ import { logger } from "./utils/logger.js";
 export async function convertCSS(cssString, options = {}) {
 	const ast = parseCSS(cssString);
 	const transformedAst = transform(ast, options);
-	const scssString = generateSCSS(transformedAst, options);
-	return scssString;
+
+	return transformedAst.toString();
 }
 
 /**
