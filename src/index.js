@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "path";
+import { basename, dirname, join } from "node:path";
 import { generateSCSS } from "./core/generator.js";
 import { parseCSS } from "./core/parser.js";
 import { transform } from "./core/transformer.js";
