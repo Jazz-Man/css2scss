@@ -28,141 +28,89 @@ function findOrCreateRuleAtPath(root, path) {
 }
 
 /**
- * Parse a selector into parts by space combinators only.
+ * Get all nodes from a selector as an array.
+ */
+function getNodes(selectorStr) {
+	const nodes = [];
+	selectorParser((selectors) => {
+		selectors.at(0).each((node) => nodes.push(node));
+	}).processSync(selectorStr);
+	return nodes;
+}
+
+/**
+ * Convert nodes array back to selector string.
+ */
+function nodesToSelector(nodes) {
+	return nodes.map((n) => n.toString()).join("");
+}
+
+/**
+ * Split a selector by space combinators using parser API.
  */
 function splitBySpace(selectorStr) {
 	const parts = [];
-
 	selectorParser((selectors) => {
-		const selector = selectors.at(0);
-		if (!selector) return;
+		const sel = selectors.at(0);
+		if (!sel) return;
 
-		let current = "";
+		const groups = sel.split(
+			(node) => node.type === "combinator" && node.value === " "
+		);
 
-		// Use each() instead of walk() to avoid recursing into nested nodes
-	// (e.g., the argument of :nth-child(2) which would cause duplication)
-	selector.each((node) => {
-		if (node.type === "combinator" && node.value === " ") {
-			if (current) {
-				parts.push(current);
-				current = "";
-			}
-		} else {
-			current += node.toString();
-		}
-	});
-
-		if (current) {
-			parts.push(current);
-		}
+		parts.push(...groups.map((g) => g.map((n) => n.toString()).join("").trim()));
 	}).processSync(selectorStr);
 
 	return parts;
 }
 
 /**
- * Check if a selector is "simple" (single class, id, or tag).
+ * Split nodes into base and child parts.
+ * Base: tag/class/id nodes before first pseudo
+ * Child: pseudo nodes and everything after
  */
-function isSimpleSelector(selector) {
-	let nodeCount = 0;
-	let hasMultipleClasses = false;
-
-	selectorParser((selectors) => {
-		const selector = selectors.at(0);
-		if (!selector) return;
-
-		selector.walk((node) => {
-			if (node.type === "class" || node.type === "id" || node.type === "tag") {
-				nodeCount++;
-				if (node.type === "class" && nodeCount > 1) {
-					hasMultipleClasses = true;
-				}
-			}
-		});
-	}).processSync(selector);
-
-	return !hasMultipleClasses;
-}
-
-/**
- * Extract base without pseudo-classes
- */
-function extractBaseWithoutPseudo(selector) {
-	// Find first combinator (>, +, ~) or pseudo-class (:)
-	for (let i = 0; i < selector.length; i++) {
-		const char = selector[i];
-		if (char === ":" || char === ">" || char === "+" || char === "~") {
-			return selector.slice(0, i);
-		}
-	}
-	return selector;
-}
-
-/**
- * Find the longest base selector that matches the start of a selector.
- * Stops at combinators (> + ~) or pseudo-classes (:).
- */
-function findBaseMatch(selector, knownBases) {
-	const sortedBases = [...knownBases].sort((a, b) => b.length - a.length);
-
-	for (const base of sortedBases) {
-		if (selector === base) {
-			return { base, remainder: "" };
-		}
-		if (selector.startsWith(base)) {
-			const remainder = selector.slice(base.length);
-			// Only chain if remainder starts with ., #, or : (but not :> or :+ etc.)
-			if (
-				remainder &&
-				(remainder[0] === "." ||
-					remainder[0] === "#" ||
-					(remainder[0] === ":" && !remainder.startsWith(":>")))
-			) {
-				return { base, remainder };
-			}
+function splitBaseChild(nodes) {
+	let splitIdx = -1;
+	for (let i = 0; i < nodes.length; i++) {
+		if (nodes[i].type === "pseudo") {
+			splitIdx = i;
+			break;
 		}
 	}
 
-	return null;
+	if (splitIdx === -1) {
+		return { base: nodes, child: null };
+	}
+
+	return {
+		base: nodes.slice(0, splitIdx),
+		child: nodes.slice(splitIdx),
+	};
 }
 
 /**
  * Parse selector into nesting path.
- * Handles chained classes, pseudo-classes, and combinators.
+ * Uses AST-based approach without regex.
  */
-function parseSelectorPath(selectorStr, knownBases) {
+function parseSelectorPath(selectorStr) {
 	const parts = splitBySpace(selectorStr);
 	const path = [];
 
 	for (const part of parts) {
-		const match = findBaseMatch(part, knownBases);
-		if (match && match.remainder) {
-			path.push(match.base);
-			// Split remainder at combinators (> + ~)
-			const remainder = match.remainder;
-			// Updated regex to handle tags after combinators and pseudo-classes
-			const combinatorMatch = remainder.match(/^([.#][\w-]*)?([>+~])?\s*(.*)?$/);
-			if (combinatorMatch) {
-				const [, chain, combinator, after] = combinatorMatch;
-				if (chain) {
-					path.push(`&${chain}`);
-				}
-				if (combinator) {
-					path.push(combinator);
-				}
-				if (after) {
-					// If after starts with :, ., or #, prepend & for proper nesting
-					if (after.startsWith(":") || after.startsWith(".") || after.startsWith("#")) {
-						path.push(`&${after}`);
-					} else {
-						path.push(after);
-					}
-				}
-			} else {
-				path.push(`&${remainder}`);
-			}
-		} else {
-			path.push(part);
+		const nodes = getNodes(part);
+		const { base, child } = splitBaseChild(nodes);
+
+		// Add base as selector string
+		const baseStr = nodesToSelector(base);
+		if (baseStr) {
+			path.push(baseStr);
+		}
+
+		// If there's a child part, add it with & for nesting
+		if (child && child.length > 0) {
+			const childStr = nodesToSelector(child);
+			// Pseudo-classes already have : prefix, just prepend &
+			path.push(`&${childStr}`);
 		}
 	}
 
@@ -222,18 +170,6 @@ export function transform(root, options = {}) {
 	}
 
 	const newRoot = postcss.root();
-	const knownBases = new Set();
-
-	// Collect base selectors (without pseudo-classes or combinators)
-	root.walkRules((rule) => {
-		const parts = splitBySpace(rule.selector);
-		if (parts.length > 0) {
-			const base = extractBaseWithoutPseudo(parts[0]);
-			if (isSimpleSelector(base)) {
-				knownBases.add(base);
-			}
-		}
-	});
 
 	// First, preserve all at-rules that are NOT @media (@keyframes, @supports, @font-face, etc.)
 	root.walkAtRules((atRule) => {
@@ -245,7 +181,6 @@ export function transform(root, options = {}) {
 	// Process all rules
 	root.walkRules((rule) => {
 		// Skip rules that are inside @keyframes, @font-face, etc.
-		// We want to preserve those at-rules as-is with their contents
 		if (rule.parent.type === "atrule" && rule.parent.name !== "media") {
 			return;
 		}
@@ -253,7 +188,7 @@ export function transform(root, options = {}) {
 		const isInMedia =
 			rule.parent.type === "atrule" && rule.parent.name === "media";
 		const mediaParams = isInMedia ? rule.parent.params : null;
-		const path = parseSelectorPath(rule.selector, knownBases);
+		const path = parseSelectorPath(rule.selector);
 
 		const targetRule = findOrCreateRuleAtPath(newRoot, path);
 
@@ -277,7 +212,6 @@ export function transform(root, options = {}) {
 				});
 				targetRule.append(mediaRule);
 			}
-			// Prepend declarations so they appear before child rules
 			rule.walkDecls((decl) => {
 				mediaRule.prepend(
 					postcss.decl({
@@ -288,7 +222,6 @@ export function transform(root, options = {}) {
 				);
 			});
 		} else {
-			// Prepend declarations so they appear before child rules
 			rule.walkDecls((decl) => {
 				targetRule.prepend(
 					postcss.decl({
