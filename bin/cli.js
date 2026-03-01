@@ -1,5 +1,7 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
+import { existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { Command } from "commander";
 import { convertDirectory, convertFile } from "../src/index.js";
 import { logger } from "../src/utils/logger.js";
@@ -40,17 +42,15 @@ program
 				process.exit(1);
 			}
 
-			const file = Bun.file(input);
-			const exists = await file.exists();
-
-			if (!exists) {
+			// Check if input exists
+			if (!existsSync(input)) {
 				logger.error(`File not found: ${input}`);
 				process.exit(1);
 			}
 
-			const fileType = await file.type;
-
-			const isDirectory = fileType === "directory";
+			// Check if it's a directory or file
+			const statResult = await stat(input);
+			const isDirectory = statResult.isDirectory();
 
 			if (isDirectory) {
 				await convertDirectory(input, output, options);

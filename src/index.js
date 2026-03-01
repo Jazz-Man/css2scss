@@ -1,4 +1,5 @@
 import { basename, dirname, join } from "node:path";
+import fglob from "fast-glob";
 import { parseCSS } from "./core/parser.js";
 import { transform } from "./core/transformer.js";
 import { ensureDirectory, readFile, writeFile } from "./utils/file.js";
@@ -57,7 +58,7 @@ export async function convertDirectory(inputDir, outputDir, options = {}) {
 		? join(inputDir, "**", "*.css")
 		: join(inputDir, "*.css");
 
-	const files = await Array.fromAsync(Bun.globSync(pattern));
+	const files = await glob(pattern, { absolute: true });
 
 	if (files.length === 0) {
 		logger.warn(`No CSS files found in ${inputDir}`);

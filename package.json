@@ -2,7 +2,7 @@
 	"name": "@jazz-man/css2scss",
 	"version": "1.0.0",
 	"private": false,
-	"description": "Modern CLI utility for converting CSS to SCSS (Bun optimized)",
+	"description": "Modern CLI utility for converting CSS to SCSS with automatic selector nesting",
 	"type": "module",
 	"bin": {
 		"css2scss": "./bin/cli.js"
@@ -39,6 +39,7 @@
 	"dependencies": {
 		"chalk": "^5.3.0",
 		"commander": "^12.0.0",
+		"fast-glob": "^3.3.2",
 		"postcss": "^8.4.35",
 		"postcss-selector-parser": "7.1.1"
 	},
@@ -46,6 +47,6 @@
 		"@types/bun": "^1.0.0"
 	},
 	"engines": {
-		"bun": ">=1.0.0"
+		"node": ">=18.0.0"
 	}
 }
