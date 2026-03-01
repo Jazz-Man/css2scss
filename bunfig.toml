@@ -1,7 +1,26 @@
-[install]
-# Швидша установка пакетів
-exact = true
+logLevel = "debug" # "debug" | "warn" | "error"
+telemetry = false
 
-[run]
-# Швидке виконання скриптів
-shell = "bun"
+[test]
+root = "tests"
+coverage = false
+
+
+[install.lockfile]
+save = true
+
+[install.scopes]
+"@jazz-man" = "https://npm.pkg.github.com"
+
+[install]
+exact = true
+optional = true
+dev = true
+peer = true
+auto = "auto"
+
+[publish]
+# GitHub Packages registry for publishing
+registry = "https://npm.pkg.github.com"
+# Always use token from environment
+token = "${GITHUB_TOKEN}"
