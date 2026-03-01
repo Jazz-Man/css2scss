@@ -68,8 +68,14 @@ function splitBySpace(selectorStr) {
  * Split nodes into base and child parts.
  * Base: tag/class/id nodes before first pseudo
  * Child: pseudo nodes and everything after
+ * Exception: :root is a standalone selector, not a modifier
  */
 function splitBaseChild(nodes) {
+	// Special case: :root is a standalone selector
+	if (nodes.length === 1 && nodes[0].type === "pseudo" && nodes[0].value === ":root") {
+		return { base: nodes, child: null };
+	}
+
 	let splitIdx = -1;
 	for (let i = 0; i < nodes.length; i++) {
 		if (nodes[i].type === "pseudo") {
