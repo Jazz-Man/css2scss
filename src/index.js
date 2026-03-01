@@ -1,5 +1,6 @@
 import { basename, dirname, join } from "node:path";
 import fglob from "fast-glob";
+import scss from "postcss-scss";
 import { parseCSS } from "./core/parser.js";
 import { transform } from "./core/transformer.js";
 import { ensureDirectory, readFile, writeFile } from "./utils/file.js";
@@ -16,7 +17,7 @@ export async function convertCSS(cssString, options = {}) {
 	const ast = parseCSS(cssString);
 	const transformedAst = transform(ast, options);
 
-	return transformedAst.toString();
+	return transformedAst.toString(scss.syntax);
 }
 
 /**
@@ -58,7 +59,7 @@ export async function convertDirectory(inputDir, outputDir, options = {}) {
 		? join(inputDir, "**", "*.css")
 		: join(inputDir, "*.css");
 
-	const files = await glob(pattern, { absolute: true });
+	const files = await fglob(pattern, { absolute: true });
 
 	if (files.length === 0) {
 		logger.warn(`No CSS files found in ${inputDir}`);

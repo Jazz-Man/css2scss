@@ -148,42 +148,68 @@ function splitBaseChild(nodes) {
  * and child modifiers (pseudo-classes, chained classes).
  *
  * @param {string} selectorStr - The CSS selector string to parse
- * @returns {string[]} Array of selector strings representing the nesting path
+ * @returns {{basePath: string[], childSelector: string | null}} Object with basePath array and optional child selector
  *
  * @example
- * parseSelectorPath(".a:hover") // Returns [".a", "&:hover"]
- * parseSelectorPath(".a.b .c") // Returns [".a.b", ".c"]
- * parseSelectorPath(":root") // Returns [":root"]
+ * parseSelectorPath(".a:hover") // Returns { basePath: [".a"], childSelector: "&:hover" }
+ * parseSelectorPath(".a.b .c") // Returns { basePath: [".a.b"], childSelector: ".c" }
+ * parseSelectorPath(".a:hover .b") // Returns { basePath: [".a"], childSelector: "&:hover .b" }
+ * parseSelectorPath(":root") // Returns { basePath: [":root"], childSelector: null }
  */
 function parseSelectorPath(selectorStr) {
 	const parts = splitBySpace(selectorStr);
-	const path = [];
 
-	for (const part of parts) {
-		const nodes = getNodes(part);
-		const { base, child } = splitBaseChild(nodes);
-
-		// Add base as selector string
-		const baseStr = nodesToSelector(base);
-		if (baseStr) {
-			path.push(baseStr);
-		}
-
-		// If there's a child part, add it with & for nesting
-		if (child && child.length > 0) {
-			const childStr = nodesToSelector(child);
-			// Pseudo-classes already have : prefix, just prepend &
-			path.push(`&${childStr}`);
-		}
+	if (parts.length === 0) {
+		return { basePath: [selectorStr], childSelector: null };
 	}
 
-	return path;
+	if (parts.length === 1) {
+		const nodes = getNodes(parts[0]);
+		const { base, child } = splitBaseChild(nodes);
+		const basePath = nodesToSelector(base);
+
+		if (!basePath) {
+			return { basePath: [parts[0]], childSelector: null };
+		}
+
+		if (child && child.length > 0) {
+			return { basePath: [basePath], childSelector: `&${nodesToSelector(child)}` };
+		}
+
+		return { basePath: [basePath], childSelector: null };
+	}
+
+	// Multiple parts: first part is the base, rest forms the child selector
+	const firstPartNodes = getNodes(parts[0]);
+	const { base: firstBase, child: firstChild } = splitBaseChild(firstPartNodes);
+	const baseSelector = nodesToSelector(firstBase);
+
+	if (!baseSelector) {
+		return { basePath: [selectorStr], childSelector: null };
+	}
+
+	// Build child selector: start with first part's pseudo (if any), then add rest
+	const childParts = [];
+	if (firstChild && firstChild.length > 0) {
+		childParts.push(`&${nodesToSelector(firstChild)}`);
+	} else {
+		childParts.push("&");
+	}
+
+	// Add remaining parts with proper spacing
+	for (let i = 1; i < parts.length; i++) {
+		childParts.push(parts[i]);
+	}
+
+	const childSelector = childParts.join(" ");
+
+	return { basePath: [baseSelector], childSelector };
 }
 
 /**
  * Sorts nodes within a rule according to SCSS conventions.
  * Order: declarations → @media at-rules → child rules
- * Recursively sorts nested rules.
+ * Recursively sorts nested rules. Also ensures all declarations have semicolons.
  *
  * @param {import('postcss').Rule} rule - The rule to sort
  * @returns {void}
@@ -200,6 +226,8 @@ function sortRuleNodes(rule) {
 
 	for (const node of rule.nodes) {
 		if (node.type === "decl") {
+			// Ensure semicolon on all declarations
+			node.raws.semicolon = true;
 			decls.push(node);
 		} else if (node.type === "atrule" && node.name === "media") {
 			atrules.push(node);
@@ -229,9 +257,22 @@ function sortRuleNodes(rule) {
 }
 
 /**
+ * Creates a signature string for declarations to compare equality.
+ *
+ * @param {Array<{prop: string, value: string, important: boolean}>} declarations - Array of declarations
+ * @returns {string} A unique signature string for the declarations
+ */
+function declarationsSignature(declarations) {
+	return declarations
+		.map((d) => `${d.prop}:${d.value}:${d.important ? "important" : ""}`)
+		.join("|");
+}
+
+/**
  * Applies nesting transformation to a CSS AST.
  * Converts flat CSS rules into nested SCSS structure using postcss-selector-parser.
  * Preserves at-rules (@keyframes, @supports, @font-face) and handles @media queries.
+ * Merges comma-separated selectors with identical declarations into single rules.
  *
  * @param {import('postcss').Root} root - The PostCSS Root node to transform
  * @param {{comments: boolean}} options - Transformation options
@@ -257,7 +298,11 @@ export function transform(root, options = {}) {
 		}
 	});
 
-	// Process all rules
+	// Group selectors by (basePath, declarations, mediaParams)
+	// Key format: "basePath.join('|')|declSig|mediaParams|null"
+	const selectorGroups = new Map();
+
+	// Process all rules to build groups
 	root.walkRules((rule) => {
 		// Skip rules that are inside @keyframes, @font-face, etc.
 		if (rule.parent.type === "atrule" && rule.parent.name !== "media") {
@@ -267,56 +312,155 @@ export function transform(root, options = {}) {
 		const isInMedia =
 			rule.parent.type === "atrule" && rule.parent.name === "media";
 		const mediaParams = isInMedia ? rule.parent.params : null;
-		const path = parseSelectorPath(rule.selector);
 
-		const targetRule = findOrCreateRuleAtPath(newRoot, path);
+		// Collect declarations once
+		const declarations = [];
+		rule.walkDecls((decl) => {
+			declarations.push({
+				prop: decl.prop,
+				value: decl.value,
+				important: decl.important,
+			});
+		});
 
-		if (isInMedia) {
-			// Create or find @media rule
-			let mediaRule = null;
+		const declSig = declarationsSignature(declarations);
+
+		// Handle comma-separated selectors
+		const selectors = rule.selector.split(/,\s*/).filter((s) => s.trim());
+
+		for (const selector of selectors) {
+			const { basePath, childSelector } = parseSelectorPath(selector);
+
+			const groupKey = `${basePath.join("|")}|${declSig}|${mediaParams || "null"}`;
+
+			if (!selectorGroups.has(groupKey)) {
+				selectorGroups.set(groupKey, {
+					basePath,
+					childSelectors: [],
+					declarations,
+					mediaParams,
+				});
+			}
+
+			const group = selectorGroups.get(groupKey);
+			if (childSelector) {
+				group.childSelectors.push(childSelector);
+			}
+		}
+	});
+
+	// Now create the actual rules from groups
+	for (const group of selectorGroups.values()) {
+		const { basePath, childSelectors, declarations, mediaParams } = group;
+
+		// Find or create the base rule
+		const baseRule = findOrCreateRuleAtPath(newRoot, basePath);
+
+		if (childSelectors.length === 0) {
+			// No child selector, add declarations directly to base rule
+			if (mediaParams) {
+				let mediaRule = null;
+				for (const node of baseRule.nodes) {
+					if (
+						node.type === "atrule" &&
+						node.name === "media" &&
+						node.params === mediaParams
+					) {
+						mediaRule = node;
+						break;
+					}
+				}
+				if (!mediaRule) {
+					mediaRule = postcss.atRule({
+						name: "media",
+						params: mediaParams,
+					});
+					baseRule.append(mediaRule);
+				}
+				for (const decl of declarations) {
+					const newDecl = postcss.decl({
+						prop: decl.prop,
+						value: decl.value,
+						important: decl.important,
+					});
+					newDecl.raws.semicolon = true;
+					mediaRule.prepend(newDecl);
+				}
+			} else {
+				for (const decl of declarations) {
+					const newDecl = postcss.decl({
+						prop: decl.prop,
+						value: decl.value,
+						important: decl.important,
+					});
+					newDecl.raws.semicolon = true;
+					baseRule.prepend(newDecl);
+				}
+			}
+		} else {
+			// Has child selectors - create one child rule with comma-separated selectors
+			const childSelectorStr = childSelectors.join(",\n\t");
+
+			let targetRule;
+			if (mediaParams) {
+				// Find or create @media rule in base
+				let mediaRule = null;
+				for (const node of baseRule.nodes) {
+					if (
+						node.type === "atrule" &&
+						node.name === "media" &&
+						node.params === mediaParams
+					) {
+						mediaRule = node;
+						break;
+					}
+				}
+				if (!mediaRule) {
+					mediaRule = postcss.atRule({
+						name: "media",
+						params: mediaParams,
+					});
+					baseRule.append(mediaRule);
+				}
+				targetRule = mediaRule;
+			} else {
+				targetRule = baseRule;
+			}
+
+			// Find existing child rule with same selector
+			let childRule = null;
 			for (const node of targetRule.nodes) {
-				if (
-					node.type === "atrule" &&
-					node.name === "media" &&
-					node.params === mediaParams
-				) {
-					mediaRule = node;
+				if (node.type === "rule" && node.selector === childSelectorStr) {
+					childRule = node;
 					break;
 				}
 			}
-			if (!mediaRule) {
-				mediaRule = postcss.atRule({
-					name: "media",
-					params: mediaParams,
-				});
-				targetRule.append(mediaRule);
+
+			if (!childRule) {
+				childRule = postcss.rule({ selector: childSelectorStr });
+				targetRule.append(childRule);
 			}
-			rule.walkDecls((decl) => {
-				mediaRule.prepend(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					}),
-				);
-			});
-		} else {
-			rule.walkDecls((decl) => {
-				targetRule.prepend(
-					postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					}),
-				);
-			});
+
+			// Add declarations to child rule
+			for (const decl of declarations) {
+				const newDecl = postcss.decl({
+					prop: decl.prop,
+					value: decl.value,
+					important: decl.important,
+				});
+				newDecl.raws.semicolon = true;
+				childRule.prepend(newDecl);
+			}
 		}
-	});
+	}
 
 	// Sort all nodes in correct order: decl -> @media -> rule
 	newRoot.walkRules((rule) => {
 		sortRuleNodes(rule);
 	});
+
+	// Ensure proper SCSS output format
+	newRoot.raws.semicolon = true;
 
 	return newRoot;
 }
