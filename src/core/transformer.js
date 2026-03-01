@@ -39,16 +39,18 @@ function splitBySpace(selectorStr) {
 
 		let current = "";
 
-		selector.walk((node) => {
-			if (node.type === "combinator" && node.value === " ") {
-				if (current) {
-					parts.push(current);
-					current = "";
-				}
-			} else {
-				current += node.toString();
+		// Use each() instead of walk() to avoid recursing into nested nodes
+	// (e.g., the argument of :nth-child(2) which would cause duplication)
+	selector.each((node) => {
+		if (node.type === "combinator" && node.value === " ") {
+			if (current) {
+				parts.push(current);
+				current = "";
 			}
-		});
+		} else {
+			current += node.toString();
+		}
+	});
 
 		if (current) {
 			parts.push(current);
@@ -110,7 +112,12 @@ function findBaseMatch(selector, knownBases) {
 		if (selector.startsWith(base)) {
 			const remainder = selector.slice(base.length);
 			// Only chain if remainder starts with ., #, or : (but not :> or :+ etc.)
-			if (remainder && (remainder[0] === "." || remainder[0] === "#" || (remainder[0] === ":" && !remainder.startsWith(":>")))) {
+			if (
+				remainder &&
+				(remainder[0] === "." ||
+					remainder[0] === "#" ||
+					(remainder[0] === ":" && !remainder.startsWith(":>")))
+			) {
 				return { base, remainder };
 			}
 		}
@@ -133,20 +140,26 @@ function parseSelectorPath(selectorStr, knownBases) {
 			path.push(match.base);
 			// Split remainder at combinators (> + ~)
 			const remainder = match.remainder;
-			const combinatorMatch = remainder.match(/^([.#][\w-]*)?(>+|~|\+)?(.*)$/);
+			// Updated regex to handle tags after combinators and pseudo-classes
+			const combinatorMatch = remainder.match(/^([.#][\w-]*)?([>+~])?\s*(.*)?$/);
 			if (combinatorMatch) {
 				const [, chain, combinator, after] = combinatorMatch;
 				if (chain) {
-					path.push("&" + chain);
+					path.push(`&${chain}`);
 				}
 				if (combinator) {
 					path.push(combinator);
 				}
 				if (after) {
-					path.push(after);
+					// If after starts with :, ., or #, prepend & for proper nesting
+					if (after.startsWith(":") || after.startsWith(".") || after.startsWith("#")) {
+						path.push(`&${after}`);
+					} else {
+						path.push(after);
+					}
 				}
 			} else {
-				path.push("&" + remainder);
+				path.push(`&${remainder}`);
 			}
 		} else {
 			path.push(part);
@@ -222,19 +235,37 @@ export function transform(root, options = {}) {
 		}
 	});
 
+	// First, preserve all at-rules that are NOT @media (@keyframes, @supports, @font-face, etc.)
+	root.walkAtRules((atRule) => {
+		if (atRule.parent.type === "root" && atRule.name !== "media") {
+			newRoot.append(atRule.clone());
+		}
+	});
+
 	// Process all rules
 	root.walkRules((rule) => {
-		const isInMedia = rule.parent.type === "atrule" && rule.parent.name === "media";
-		const mediaParams = isInMedia ? rule.parent.params : null;
+		// Skip rules that are inside @keyframes, @font-face, etc.
+		// We want to preserve those at-rules as-is with their contents
+		if (rule.parent.type === "atrule" && rule.parent.name !== "media") {
+			return;
+		}
 
+		const isInMedia =
+			rule.parent.type === "atrule" && rule.parent.name === "media";
+		const mediaParams = isInMedia ? rule.parent.params : null;
 		const path = parseSelectorPath(rule.selector, knownBases);
+
 		const targetRule = findOrCreateRuleAtPath(newRoot, path);
 
 		if (isInMedia) {
 			// Create or find @media rule
 			let mediaRule = null;
 			for (const node of targetRule.nodes) {
-				if (node.type === "atrule" && node.name === "media" && node.params === mediaParams) {
+				if (
+					node.type === "atrule" &&
+					node.name === "media" &&
+					node.params === mediaParams
+				) {
 					mediaRule = node;
 					break;
 				}
@@ -247,19 +278,23 @@ export function transform(root, options = {}) {
 				targetRule.append(mediaRule);
 			}
 			rule.walkDecls((decl) => {
-				mediaRule.append(postcss.decl({
-					prop: decl.prop,
-					value: decl.value,
-					important: decl.important,
-				}));
+				mediaRule.append(
+					postcss.decl({
+						prop: decl.prop,
+						value: decl.value,
+						important: decl.important,
+					}),
+				);
 			});
 		} else {
 			rule.walkDecls((decl) => {
-				targetRule.append(postcss.decl({
-					prop: decl.prop,
-					value: decl.value,
-					important: decl.important,
-				}));
+				targetRule.append(
+					postcss.decl({
+						prop: decl.prop,
+						value: decl.value,
+						important: decl.important,
+					}),
+				);
 			});
 		}
 	});
