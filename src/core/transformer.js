@@ -277,8 +277,9 @@ export function transform(root, options = {}) {
 				});
 				targetRule.append(mediaRule);
 			}
+			// Prepend declarations so they appear before child rules
 			rule.walkDecls((decl) => {
-				mediaRule.append(
+				mediaRule.prepend(
 					postcss.decl({
 						prop: decl.prop,
 						value: decl.value,
@@ -287,8 +288,9 @@ export function transform(root, options = {}) {
 				);
 			});
 		} else {
+			// Prepend declarations so they appear before child rules
 			rule.walkDecls((decl) => {
-				targetRule.append(
+				targetRule.prepend(
 					postcss.decl({
 						prop: decl.prop,
 						value: decl.value,
