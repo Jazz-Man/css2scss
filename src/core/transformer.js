@@ -2,7 +2,16 @@ import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 
 /**
- * Find or create a rule at a given path.
+ * Finds an existing rule at the given path or creates a new one.
+ * Traverses the AST hierarchy, creating nested rules as needed.
+ *
+ * @param {import('postcss').Root | import('postcss').Rule} root - The root or rule to search in
+ * @param {string[]} path - Array of selector strings representing the nesting path
+ * @returns {import('postcss').Rule} The found or created rule at the end of the path
+ *
+ * @example
+ * // Finds or creates .a > .b path
+ * const rule = findOrCreateRuleAtPath(root, [".a", ">"]);
  */
 function findOrCreateRuleAtPath(root, path) {
 	let current = root;
@@ -28,7 +37,14 @@ function findOrCreateRuleAtPath(root, path) {
 }
 
 /**
- * Get all nodes from a selector as an array.
+ * Extracts all AST nodes from a CSS selector string.
+ * Uses postcss-selector-parser to parse and iterate over direct children only.
+ *
+ * @param {string} selectorStr - The CSS selector string to parse
+ * @returns {import('postcss-selector-parser').Node[]} Array of parsed selector nodes
+ *
+ * @example
+ * getNodes(".a:hover") // Returns [class"a", pseudo":hover"]
  */
 function getNodes(selectorStr) {
 	const nodes = [];
@@ -39,14 +55,27 @@ function getNodes(selectorStr) {
 }
 
 /**
- * Convert nodes array back to selector string.
+ * Converts an array of parsed selector nodes back to a CSS selector string.
+ *
+ * @param {import('postcss-selector-parser').Node[]} nodes - Array of selector nodes
+ * @returns {string} The concatenated selector string
+ *
+ * @example
+ * nodesToSelector([class"a", pseudo":hover"]) // Returns ".a:hover"
  */
 function nodesToSelector(nodes) {
 	return nodes.map((n) => n.toString()).join("");
 }
 
 /**
- * Split a selector by space combinators using parser API.
+ * Splits a CSS selector by descendant space combinators using the parser API.
+ * Preserves other combinators (>, +, ~) within each part.
+ *
+ * @param {string} selectorStr - The CSS selector string to split
+ * @returns {string[]} Array of selector parts split by spaces
+ *
+ * @example
+ * splitBySpace(".a .b > .c") // Returns [".a", ".b > .c"]
  */
 function splitBySpace(selectorStr) {
 	const parts = [];
@@ -55,24 +84,43 @@ function splitBySpace(selectorStr) {
 		if (!sel) return;
 
 		const groups = sel.split(
-			(node) => node.type === "combinator" && node.value === " "
+			(node) => node.type === "combinator" && node.value === " ",
 		);
 
-		parts.push(...groups.map((g) => g.map((n) => n.toString()).join("").trim()));
+		parts.push(
+			...groups.map((g) =>
+				g
+					.map((n) => n.toString())
+					.join("")
+					.trim(),
+			),
+		);
 	}).processSync(selectorStr);
 
 	return parts;
 }
 
 /**
- * Split nodes into base and child parts.
- * Base: tag/class/id nodes before first pseudo
- * Child: pseudo nodes and everything after
- * Exception: :root is a standalone selector, not a modifier
+ * Splits selector nodes into base and child parts for nesting purposes.
+ * The base consists of tag/class/id nodes before the first pseudo-class.
+ * Child parts include pseudo-classes and everything after them.
+ *
+ * Special case: `:root` is treated as a standalone selector, not a modifier.
+ *
+ * @param {import('postcss-selector-parser').Node[]} nodes - Array of selector nodes
+ * @returns {{base: import('postcss-selector-parser').Node[], child: import('postcss-selector-parser').Node[] | null}} Object with base and child arrays
+ *
+ * @example
+ * splitBaseChild([class"a", pseudo":hover"]) // Returns { base: [class"a"], child: [pseudo":hover"] }
+ * splitBaseChild([pseudo":root"]) // Returns { base: [pseudo":root"], child: null }
  */
 function splitBaseChild(nodes) {
 	// Special case: :root is a standalone selector
-	if (nodes.length === 1 && nodes[0].type === "pseudo" && nodes[0].value === ":root") {
+	if (
+		nodes.length === 1 &&
+		nodes[0].type === "pseudo" &&
+		nodes[0].value === ":root"
+	) {
 		return { base: nodes, child: null };
 	}
 
@@ -95,8 +143,17 @@ function splitBaseChild(nodes) {
 }
 
 /**
- * Parse selector into nesting path.
- * Uses AST-based approach without regex.
+ * Parses a CSS selector into a nesting path for SCSS transformation.
+ * Uses an AST-based approach without regex to determine base selectors
+ * and child modifiers (pseudo-classes, chained classes).
+ *
+ * @param {string} selectorStr - The CSS selector string to parse
+ * @returns {string[]} Array of selector strings representing the nesting path
+ *
+ * @example
+ * parseSelectorPath(".a:hover") // Returns [".a", "&:hover"]
+ * parseSelectorPath(".a.b .c") // Returns [".a.b", ".c"]
+ * parseSelectorPath(":root") // Returns [":root"]
  */
 function parseSelectorPath(selectorStr) {
 	const parts = splitBySpace(selectorStr);
@@ -124,7 +181,17 @@ function parseSelectorPath(selectorStr) {
 }
 
 /**
- * Sort rule nodes: decl -> atrule (@media) -> rule
+ * Sorts nodes within a rule according to SCSS conventions.
+ * Order: declarations → @media at-rules → child rules
+ * Recursively sorts nested rules.
+ *
+ * @param {import('postcss').Rule} rule - The rule to sort
+ * @returns {void}
+ *
+ * @example
+ * // Before: [rule, decl, atrule, decl]
+ * sortRuleNodes(rule);
+ * // After: [decl, decl, atrule, rule]
  */
 function sortRuleNodes(rule) {
 	const decls = [];
@@ -162,11 +229,17 @@ function sortRuleNodes(rule) {
 }
 
 /**
- * Apply nesting transformation to CSS AST.
+ * Applies nesting transformation to a CSS AST.
+ * Converts flat CSS rules into nested SCSS structure using postcss-selector-parser.
+ * Preserves at-rules (@keyframes, @supports, @font-face) and handles @media queries.
  *
- * @param {import('postcss').Root} root
- * @param {{comments: boolean}} options
- * @returns {import('postcss').Root}
+ * @param {import('postcss').Root} root - The PostCSS Root node to transform
+ * @param {{comments: boolean}} options - Transformation options
+ * @param {boolean} [options.comments=true] - Whether to preserve comments in output
+ * @returns {import('postcss').Root} The transformed root with nested SCSS structure
+ *
+ * @example
+ * const result = transform(cssRoot, { comments: true });
  */
 export function transform(root, options = {}) {
 	const { comments = true } = options;
