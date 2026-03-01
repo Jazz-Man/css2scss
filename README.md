@@ -2,7 +2,7 @@
 
 > Modern CLI utility for converting CSS to SCSS with automatic selector nesting
 
-**Bun-optimized** CLI tool that transforms flat CSS into nested SCSS structure while preserving 100% of the original data.
+**Fast and lightweight** CLI tool that transforms flat CSS into nested SCSS structure while preserving 100% of the original data.
 
 ## Features
 
@@ -10,20 +10,22 @@
   - Chained classes: `.a.b` → `.a { &.b { } }`
   - Pseudo-classes: `.a:hover` → `.a { &:hover { } }`
   - Combined: `.a.b:hover` → `.a { &.b { &:hover { } } }`
+- 🔗 **Comma-Separated Selector Merging** - Combines selectors with identical declarations
+  - `.a:hover, .a:hover .b` → `.a { &:hover, &:hover .b { } }`
 - 🔄 **@media Query Support** - Preserves and nests media queries correctly
 - 📦 **At-rule Preservation** - Keeps `@keyframes`, `@supports`, `@font-face` intact
 - 🎯 **100% Data Preservation** - No CSS data is lost during conversion
-- ⚡ **Bun Optimized** - Built for Bun runtime with native APIs
+- ⚡ **Cross-Platform** - Works with Node.js 18+ and Bun
 - 🛠️ **CLI & API** - Use as command-line tool or programmatic library
 
 ## Installation
 
 ```bash
 # Install globally
-bun install -g @jazz-man/css2scss
+npm install -g @jazz-man/css2scss
 
-# Or use directly with bun
-bunx @jazz-man/css2scss input.css output.scss
+# Or use directly with npx
+npx @jazz-man/css2scss input.css output.scss
 ```
 
 ## Usage
@@ -141,6 +143,26 @@ await convertDirectory('src/css/', 'dist/scss/', { recursive: true });
 }
 ```
 
+### Comma-Separated Selectors
+
+**Input CSS:**
+```css
+.card:hover,
+.card:hover .title {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+```
+
+**Output SCSS:**
+```scss
+.card {
+    &:hover,
+    &:hover .title {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+}
+```
+
 ### Complex Selectors
 
 **Input CSS:**
@@ -197,30 +219,31 @@ CSS String → [Parser] → PostCSS AST → [Transformer] → Nested AST → [Ge
 ### Transformer (`src/core/transformer.js`)
 - Uses **postcss-selector-parser** for AST-based selector analysis
 - No regex - relies on parser API for reliability
+- Groups selectors by path and declarations for comma-separated merging
 - Key functions:
   - `getNodes()` - Extract AST nodes from selector
   - `splitBaseChild()` - Split into base/child parts for nesting
   - `parseSelectorPath()` - Build nesting path from AST
   - `findOrCreateRuleAtPath()` - Create nested rule structure
 
-### Generator
-- Uses PostCSS's built-in `toString()` for serialization
+### Generator (`src/index.js`)
+- Uses **postcss-scss** syntax stringifier for proper SCSS output
 - Maintains proper formatting and indentation
 
 ## Development
 
 ```bash
 # Install dependencies
-bun install
+npm install
 
 # Run CLI
-bun run bin/cli.js input.css
+node bin/cli.js input.css
 
 # Run tests
-bun test
+npm test
 
 # Build standalone executable
-bun run build
+npm run build
 
 # Lint/format
 npx @biomejs/biome check .
@@ -240,7 +263,7 @@ css2scss/
 │   ├── index.js             # Main API exports
 │   └── utils/
 │       ├── debug.js        # Debug utilities
-│       ├── file.js          # File I/O (Bun APIs)
+│       ├── file.js          # File I/O (Node.js fs/promises)
 │       └── logger.js       # CLI logger (Chalk)
 ├── package.json
 ├── biome.json              # Biome config (linter/formatter)
@@ -251,12 +274,14 @@ css2scss/
 
 - **postcss** ^8.4.35 - CSS parsing and AST manipulation
 - **postcss-selector-parser** ^7.1.1 - Selector parsing and analysis
+- **postcss-scss** ^4.0.9 - SCSS syntax stringifier
+- **fast-glob** ^3.3.2 - Fast file pattern matching
 - **commander** ^12.0.0 - CLI framework
 - **chalk** ^5.3.0 - Terminal colors
 
 ## Engine
 
-Requires **Bun** >= 1.0.0
+Requires **Node.js** >= 18.0.0 (also compatible with Bun)
 
 ## License
 
