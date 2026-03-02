@@ -13,11 +13,7 @@ dist/
 build/
 *.css.map
 css2scss
-css2scss.exe
 
-# Testing
-coverage/
-*.test.js
 
 # Logs
 logs/
