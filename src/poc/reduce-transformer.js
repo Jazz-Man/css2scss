@@ -61,7 +61,7 @@ function buildSingleSelector(selector, declarations, root) {
  * @param {import('postcss').Root} root - PostCSS root to append to
  */
 function buildLCPGroup(group, declarations, root) {
-	const { selectors, lcpNode, path } = group;
+	const { selectors, path } = group;
 
 	if (selectors.length === 1) {
 		// Single selector - use simple path
@@ -76,7 +76,10 @@ function buildLCPGroup(group, declarations, root) {
 
 		for (const sel of selectors) {
 			// Build structure key from nodes (excluding first node's value)
-			const structure = sel.nodes.slice(1).map((n) => n.type).join("|");
+			const structure = sel.nodes
+				.slice(1)
+				.map((n) => n.type)
+				.join("|");
 
 			if (!structureGroups.has(structure)) {
 				structureGroups.set(structure, []);
@@ -107,17 +110,26 @@ function buildLCPGroup(group, declarations, root) {
 
 					// Check if previous node was a space combinator
 					const prevNode = i > 0 ? templateNodes[i - 1] : null;
-					if (prevNode && prevNode.type === "combinator" && prevNode.value === " ") {
+					if (
+						prevNode &&
+						prevNode.type === "combinator" &&
+						prevNode.value === " "
+					) {
 						ruleSelector = node.value;
-					} else if (i === 0 || (prevNode && prevNode.type === "combinator" && prevNode.value === " ")) {
+					} else if (
+						i === 0 ||
+						(prevNode &&
+							prevNode.type === "combinator" &&
+							prevNode.value === " ")
+					) {
 						// First node after parent, or after space combinator
 						if (node.type === "pseudo") {
-							ruleSelector = "&" + node.value;
+							ruleSelector = `&${node.value}`;
 						} else {
 							ruleSelector = node.value;
 						}
 					} else {
-						ruleSelector = "&" + node.value;
+						ruleSelector = `&${node.value}`;
 					}
 
 					const newRule = postcss.rule({ selector: ruleSelector });
@@ -197,9 +209,11 @@ function buildLCPGroup(group, declarations, root) {
 		// If previous node was a space combinator, don't add & (descendant selectors)
 		const needsAmpersand =
 			!lastPathNodeWasSpaceCombinator &&
-			(trimmed.startsWith(":") || trimmed.startsWith(".") || trimmed.startsWith("#"));
+			(trimmed.startsWith(":") ||
+				trimmed.startsWith(".") ||
+				trimmed.startsWith("#"));
 
-		return needsAmpersand ? "&" + trimmed : trimmed;
+		return needsAmpersand ? `&${trimmed}` : trimmed;
 	});
 	const leafSelector = divergentSelectors.join(", ");
 
