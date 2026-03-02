@@ -11,7 +11,7 @@ import {
 	buildStructureKey,
 	canGroupTogether,
 	groupByStructure,
-} from "../../src/poc/structure-grouper.js";
+} from "../../src/core/structure-grouper.js";
 
 describe("structure-grouper", () => {
 	describe("buildStructureKey", () => {

@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { SelectorTrie, SelectorTrieNode } from "../../src/poc/selector-trie.js";
+import {
+	SelectorTrie,
+	SelectorTrieNode,
+} from "../../src/core/selector-trie.js";
 
 describe("SelectorTrieNode", () => {
 	test("should create a node with correct properties", () => {

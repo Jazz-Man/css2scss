@@ -10,7 +10,7 @@ import {
 	transformCSS,
 	transformRule,
 	transformSelectorReduce,
-} from "../../src/poc/reduce-transformer.js";
+} from "../../src/core/reduce-transformer.js";
 import { decl, toSCSS, transformToSCSS } from "./helpers.js";
 
 describe("transformSelectorReduce (POC)", () => {

@@ -13,8 +13,8 @@ import {
 	buildRuleSelector,
 	buildSuffixSelectors,
 	needsAmpersand,
-} from "../../src/poc/selector-builder.js";
-import { SelectorTrie } from "../../src/poc/selector-trie.js";
+} from "../../src/core/selector-builder.js";
+import { SelectorTrie } from "../../src/core/selector-trie.js";
 
 describe("selector-builder", () => {
 	describe("needsAmpersand", () => {
