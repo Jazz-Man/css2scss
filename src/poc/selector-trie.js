@@ -123,7 +123,28 @@ export class SelectorTrie {
 	}
 
 	/**
+	 * Count selectors that continue beyond this node (have descendants)
+	 * For LCP finding, we need all selectors to have the SAME path
+	 * @param {SelectorTrieNode} node - Root node of subtree
+	 * @returns {number} Count of selectors continuing beyond this node
+	 */
+	_countContinuingSelectors(node) {
+		// A selector "continues" if it has children in this subtree
+		// We count unique selectors that appear in any child (not at this node)
+		const seen = new Set();
+		let count = 0;
+
+		for (const child of node.children.values()) {
+			const childCount = this._countSelectors(child, seen);
+			count += childCount;
+		}
+
+		return count;
+	}
+
+	/**
 	 * Find the deepest node where all selectors pass through (LCP node)
+	 * For LCP, all selectors must continue beyond the node (same path)
 	 * @returns {SelectorTrieNode|null} The LCP node or null if no common prefix
 	 */
 	findLCP() {
@@ -131,22 +152,52 @@ export class SelectorTrie {
 			return null;
 		}
 
-		const totalCount = this._countSelectors(this.root);
-		return this._findLCPRecursive(this.root, totalCount);
+		// Count unique selectors (handles duplicate insertions)
+		const uniqueCount = this._countUniqueSelectors(this.root);
+
+		// If only one unique selector, LCP is the full path
+		if (uniqueCount === 1) {
+			return this._findSingleSelectorLCP(this.root);
+		}
+
+		return this._findLCPRecursive(this.root, uniqueCount);
+	}
+
+	/**
+	 * Count unique selectors in a subtree
+	 * @param {SelectorTrieNode} node - Root node of subtree
+	 * @returns {number} Count of unique selectors
+	 */
+	_countUniqueSelectors(node) {
+		const seen = new Set();
+		return this._countSelectors(node, seen);
+	}
+
+	/**
+	 * Find LCP for a single selector (should be the full path)
+	 * @param {SelectorTrieNode} node - Starting node
+	 * @returns {SelectorTrieNode} Terminal node of the single selector
+	 */
+	_findSingleSelectorLCP(node) {
+		// Follow the single path to the terminal node
+		for (const child of node.children.values()) {
+			return this._findSingleSelectorLCP(child);
+		}
+		return node;
 	}
 
 	/**
 	 * Recursively find the deepest node where all selectors pass through
 	 * @param {SelectorTrieNode} node - Current node
-	 * @param {number} totalCount - Total selector count
+	 * @param {number} totalCount - Total unique selector count
 	 * @returns {SelectorTrieNode|null} LCP node or null
 	 */
 	_findLCPRecursive(node, totalCount) {
-		// Check if all selectors pass through this node
-		const count = this._countSelectors(node);
+		// Check if all selectors continue beyond this node
+		const continuingCount = this._countContinuingSelectors(node);
 
-		if (count === totalCount) {
-			// All selectors pass through, check if we can go deeper
+		if (continuingCount === totalCount) {
+			// All selectors continue, check if we can go deeper
 			for (const child of node.children.values()) {
 				const result = this._findLCPRecursive(child, totalCount);
 				if (result) {
@@ -252,31 +303,10 @@ export class SelectorTrie {
 	 * @returns {string} Reconstructed suffix
 	 */
 	static getSuffix(nodes, startDepth) {
-		return nodes.slice(startDepth).map((n) => n.value).join("");
-	}
-
-	/**
-	 * Check if two selectors can be grouped together
-	 * They can be grouped if they share the same parent path structure
-	 * @param {Array<{selector: string, nodes: Array}>} selectors - Selectors to check
-	 * @returns {boolean} True if groupable
-	 */
-	static canGroup(selectors) {
-		if (selectors.length < 2) {
-			return false;
-		}
-
-		// Check if all selectors have compatible structure for grouping
-		const firstNodes = selectors[0].nodes;
-
-		for (let i = 1; i < selectors.length; i++) {
-			const nodes = selectors[i].nodes;
-
-			// Different lengths might not be groupable at the leaf level
-			// But we can still group at a common prefix
-		}
-
-		return true;
+		return nodes
+			.slice(startDepth)
+			.map((n) => n.value)
+			.join("");
 	}
 }
 
