@@ -193,6 +193,13 @@ function buildLCPGroup(group, declarations, root) {
 export function transformSelectorReduce(selectorString, options = {}) {
 	const newRoot = postcss.root();
 
+	// Validate selector string
+	if (!selectorString || selectorString.trim().length === 0) {
+		throw new Error(
+			"transformSelectorReduce requires a non-empty selector string",
+		);
+	}
+
 	// Support both `declaration` (singular) and `declarations` (array) for backward compatibility
 	let declarations = options.declarations || options.declaration;
 	if (!declarations) {
