@@ -14,7 +14,7 @@
 	"scripts": {
 		"start": "bun run bin/cli.js",
 		"test": "bun test",
-		"build": "bun build bin/cli.js --compile --outfile css2scss"
+		"build": "bun build bin/cli.js --target=bun --bytecode --production --compile --outfile css2scss"
 	},
 	"keywords": [
 		"css",
