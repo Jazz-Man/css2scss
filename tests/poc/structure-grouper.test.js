@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
+/**
+ * Structure grouper tests using parameterized testing patterns.
+ *
+ * Tests the structure-based selector grouping logic.
+ */
 
+import { describe, expect, test } from "bun:test";
 import postcss from "postcss";
 import {
 	buildStructureGroup,
@@ -10,126 +15,134 @@ import {
 
 describe("structure-grouper", () => {
 	describe("buildStructureKey", () => {
-		test("should build key for empty nodes", () => {
-			expect(buildStructureKey([])).toBe("empty");
-		});
-
-		test("should build key for single class", () => {
-			const nodes = [{ type: "class", value: ".test" }];
-			expect(buildStructureKey(nodes)).toBe("class");
-		});
-
-		test("should build key for chained classes", () => {
-			const nodes = [
-				{ type: "class", value: ".a" },
-				{ type: "class", value: ".b" },
-			];
-			expect(buildStructureKey(nodes)).toBe("class|class");
-		});
-
-		test("should build key for pseudo-class", () => {
-			const nodes = [
-				{ type: "class", value: ".a" },
-				{ type: "pseudo", value: ":hover" },
-			];
-			expect(buildStructureKey(nodes)).toBe("class|pseudo");
-		});
-
-		test("should build key for descendant", () => {
-			const nodes = [
-				{ type: "class", value: ".a" },
-				{ type: "combinator", value: " " },
-				{ type: "class", value: ".b" },
-			];
-			expect(buildStructureKey(nodes)).toBe("class|combinator|class");
-		});
-
-		test("should build key for child combinator", () => {
-			const nodes = [
-				{ type: "class", value: ".a" },
-				{ type: "combinator", value: ">" },
-				{ type: "class", value: ".b" },
-			];
-			expect(buildStructureKey(nodes)).toBe("class|combinator|class");
+		test.each([
+			{ nodes: [], expected: "empty", description: "empty nodes" },
+			{
+				nodes: [{ type: "class", value: ".test" }],
+				expected: "class",
+				description: "single class",
+			},
+			{
+				nodes: [
+					{ type: "class", value: ".a" },
+					{ type: "class", value: ".b" },
+				],
+				expected: "class|class",
+				description: "chained classes",
+			},
+			{
+				nodes: [
+					{ type: "class", value: ".a" },
+					{ type: "pseudo", value: ":hover" },
+				],
+				expected: "class|pseudo",
+				description: "pseudo-class",
+			},
+			{
+				nodes: [
+					{ type: "class", value: ".a" },
+					{ type: "combinator", value: " " },
+					{ type: "class", value: ".b" },
+				],
+				expected: "class|combinator|class",
+				description: "descendant",
+			},
+			{
+				nodes: [
+					{ type: "class", value: ".a" },
+					{ type: "combinator", value: ">" },
+					{ type: "class", value: ".b" },
+				],
+				expected: "class|combinator|class",
+				description: "child combinator",
+			},
+		])("should build key for $description", ({ nodes, expected }) => {
+			expect(buildStructureKey(nodes)).toBe(expected);
 		});
 	});
 
 	describe("canGroupTogether", () => {
-		test("should return true for single selector", () => {
-			const selectors = [{ nodes: [{ type: "class", value: ".a" }] }];
-			expect(canGroupTogether(selectors)).toBe(true);
-		});
-
-		test("should return true for selectors with same structure", () => {
-			const selectors = [
-				{
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "pseudo", value: ":hover" },
-					],
-				},
-				{
-					nodes: [
-						{ type: "class", value: ".b" },
-						{ type: "pseudo", value: ":focus" },
-					],
-				},
-			];
-			expect(canGroupTogether(selectors)).toBe(true);
-		});
-
-		test("should return false for selectors with different structure", () => {
-			const selectors = [
-				{
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "pseudo", value: ":hover" },
-					],
-				},
-				{ nodes: [{ type: "class", value: ".b" }] },
-			];
-			expect(canGroupTogether(selectors)).toBe(false);
-		});
-
-		test("should return true for selectors with same combinator type (structure only, not value)", () => {
-			const selectors = [
-				{
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					nodes: [
-						{ type: "class", value: ".c" },
-						{ type: "combinator", value: ">" },
-						{ type: "class", value: ".d" },
-					],
-				},
-			];
-			// Structure key is "class|combinator|class" for both - the VALUE of the combinator doesn't matter
-			expect(canGroupTogether(selectors)).toBe(true);
-		});
-
-		test("should return false for selectors with different structure types", () => {
-			const selectors = [
-				{
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					nodes: [
-						{ type: "class", value: ".c" },
-						{ type: "class", value: ".d" },
-					],
-				},
-			];
-			// Different structure: one has combinator, one doesn't
-			expect(canGroupTogether(selectors)).toBe(false);
+		test.each([
+			{
+				selectors: [{ nodes: [{ type: "class", value: ".a" }] }],
+				expected: true,
+				description: "single selector",
+			},
+			{
+				selectors: [
+					{
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":hover" },
+						],
+					},
+					{
+						nodes: [
+							{ type: "class", value: ".b" },
+							{ type: "pseudo", value: ":focus" },
+						],
+					},
+				],
+				expected: true,
+				description: "same structure (class|pseudo)",
+			},
+			{
+				selectors: [
+					{
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":hover" },
+						],
+					},
+					{ nodes: [{ type: "class", value: ".b" }] },
+				],
+				expected: false,
+				description: "different structure",
+			},
+			{
+				selectors: [
+					{
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".b" },
+						],
+					},
+					{
+						nodes: [
+							{ type: "class", value: ".c" },
+							{ type: "combinator", value: ">" },
+							{ type: "class", value: ".d" },
+						],
+					},
+				],
+				expected: true,
+				description: "same combinator type (different values)",
+			},
+			{
+				selectors: [
+					{
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".b" },
+						],
+					},
+					{
+						nodes: [
+							{ type: "class", value: ".c" },
+							{ type: "class", value: ".d" },
+						],
+					},
+				],
+				expected: false,
+				description: "different structure types",
+			},
+		])("should return $expected for $description", ({
+			selectors,
+			expected,
+		}) => {
+			expect(canGroupTogether(selectors)).toBe(expected);
 		});
 	});
 
@@ -169,7 +182,115 @@ describe("structure-grouper", () => {
 	});
 
 	describe("buildStructureGroup", () => {
-		test("should build nested rules for structure group", () => {
+		describe("successful grouping", () => {
+			test.each([
+				{
+					group: [
+						{
+							selector: ".a:hover",
+							nodes: [
+								{ type: "class", value: ".a" },
+								{ type: "pseudo", value: ":hover" },
+							],
+						},
+						{
+							selector: ".b:focus",
+							nodes: [
+								{ type: "class", value: ".b" },
+								{ type: "pseudo", value: ":focus" },
+							],
+						},
+					],
+					expects: [".a, .b", "&:hover, &:focus", "color: red"],
+				},
+				{
+					group: [
+						{
+							selector: ".x",
+							nodes: [{ type: "class", value: ".x" }],
+						},
+						{
+							selector: ".y",
+							nodes: [{ type: "class", value: ".y" }],
+						},
+					],
+					expects: [".x, .y", "display: block"],
+				},
+			])("should build nested rules", ({ group, expects }) => {
+				const isColorTest = expects.some((e) => e === "color: red");
+				const declarations = [
+					postcss.decl({
+						prop: isColorTest ? "color" : "display",
+						value: isColorTest ? "red" : "block",
+					}),
+				];
+				const root = postcss.root();
+
+				const result = buildStructureGroup(group, declarations, root);
+
+				expect(result).toBe(true);
+				const output = root.toString();
+				for (const expected of expects) {
+					expect(output).toContain(expected);
+				}
+			});
+		});
+
+		describe("non-space combinators - should not group", () => {
+			test.each([
+				{
+					combinator: ">",
+					description: "child combinator",
+				},
+				{
+					combinator: "+",
+					description: "adjacent sibling",
+				},
+				{
+					combinator: "~",
+					description: "general sibling",
+				},
+			])("should return false for $description", ({ combinator }) => {
+				const group = [
+					{
+						selector: `.a ${combinator} .b`,
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "combinator", value: combinator },
+							{ type: "class", value: ".b" },
+						],
+					},
+					{
+						selector: `.c ${combinator} .d`,
+						nodes: [
+							{ type: "class", value: ".c" },
+							{ type: "combinator", value: combinator },
+							{ type: "class", value: ".d" },
+						],
+					},
+				];
+				const declarations = [postcss.decl({ prop: "color", value: "blue" })];
+				const root = postcss.root();
+
+				const result = buildStructureGroup(group, declarations, root);
+
+				expect(result).toBe(false);
+				// Should not have added any rules
+				expect(root.nodes).toHaveLength(0);
+			});
+		});
+
+		test("should handle empty group", () => {
+			const declarations = [postcss.decl({ prop: "color", value: "red" })];
+			const root = postcss.root();
+
+			const result = buildStructureGroup([], declarations, root);
+
+			expect(result).toBe(false);
+			expect(root.nodes).toHaveLength(0);
+		});
+
+		test("should handle single selector group", () => {
 			const group = [
 				{
 					selector: ".a:hover",
@@ -178,13 +299,6 @@ describe("structure-grouper", () => {
 						{ type: "pseudo", value: ":hover" },
 					],
 				},
-				{
-					selector: ".b:focus",
-					nodes: [
-						{ type: "class", value: ".b" },
-						{ type: "pseudo", value: ":focus" },
-					],
-				},
 			];
 			const declarations = [postcss.decl({ prop: "color", value: "red" })];
 			const root = postcss.root();
@@ -193,106 +307,9 @@ describe("structure-grouper", () => {
 
 			expect(result).toBe(true);
 			const output = root.toString();
-			expect(output).toContain(".a, .b");
-			expect(output).toContain("&:hover, &:focus");
+			expect(output).toContain(".a");
+			expect(output).toContain("&:hover");
 			expect(output).toContain("color: red");
-		});
-
-		test("should return false for group with child combinator", () => {
-			const group = [
-				{
-					selector: ".a > .b",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: ">" },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					selector: ".c > .d",
-					nodes: [
-						{ type: "class", value: ".c" },
-						{ type: "combinator", value: ">" },
-						{ type: "class", value: ".d" },
-					],
-				},
-			];
-			const declarations = [postcss.decl({ prop: "color", value: "blue" })];
-			const root = postcss.root();
-
-			const result = buildStructureGroup(group, declarations, root);
-
-			expect(result).toBe(false);
-			// Should not have added any rules
-			expect(root.nodes).toHaveLength(0);
-		});
-
-		test("should return false for group with adjacent sibling combinator", () => {
-			const group = [
-				{
-					selector: ".a + .b",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: "+" },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					selector: ".c + .d",
-					nodes: [
-						{ type: "class", value: ".c" },
-						{ type: "combinator", value: "+" },
-						{ type: "class", value: ".d" },
-					],
-				},
-			];
-			const declarations = [postcss.decl({ prop: "color", value: "green" })];
-			const root = postcss.root();
-
-			const result = buildStructureGroup(group, declarations, root);
-
-			expect(result).toBe(false);
-		});
-
-		test("should handle group with descendant (space combinator)", () => {
-			const group = [
-				{
-					selector: ".a .b",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					selector: ".c .d",
-					nodes: [
-						{ type: "class", value: ".c" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".d" },
-					],
-				},
-			];
-			const declarations = [postcss.decl({ prop: "width", value: "100%" })];
-			const root = postcss.root();
-
-			const result = buildStructureGroup(group, declarations, root);
-
-			expect(result).toBe(true);
-			const output = root.toString();
-			expect(output).toContain(".a, .c");
-			expect(output).toContain(".b, .d");
-			expect(output).toContain("width: 100%");
-		});
-
-		test("should return false for empty group", () => {
-			const group = [];
-			const declarations = [postcss.decl({ prop: "color", value: "red" })];
-			const root = postcss.root();
-
-			const result = buildStructureGroup(group, declarations, root);
-
-			expect(result).toBe(false);
 		});
 	});
 });

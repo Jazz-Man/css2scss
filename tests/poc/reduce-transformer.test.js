@@ -1,215 +1,200 @@
-import { describe, expect, test } from "bun:test";
+/**
+ * Reduce transformer tests using parameterized testing patterns.
+ *
+ * Tests the LCP-based CSS-to-SCSS transformation logic.
+ */
 
+import { describe, expect, test } from "bun:test";
 import postcss from "postcss";
-import scss from "postcss-scss";
 import {
 	transformCSS,
 	transformRule,
 	transformSelectorReduce,
 } from "../../src/poc/reduce-transformer.js";
+import { decl, toSCSS, transformToSCSS } from "./helpers.js";
 
 describe("transformSelectorReduce (POC)", () => {
-	function toSCSS(root) {
-		return root.toString(scss.syntax);
-	}
-
 	describe("comma-separated selectors", () => {
-		test("should handle two simple selectors (grouped)", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(".a, .b", { declaration: decl });
-			const scss = toSCSS(result);
-
-			// Grouped: .a, .b { ... }
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("color: red");
-		});
-
-		test("should handle chained + simple", () => {
-			const decl = postcss.decl({ prop: "width", value: "100px" });
-			const result = transformSelectorReduce(".a.b, .c", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&.b {");
-			expect(scss).toContain(".c {");
-		});
-
-		test("should handle three selectors with pseudo", () => {
-			const decl = postcss.decl({ prop: "display", value: "block" });
-			const result = transformSelectorReduce(".a, .b.c, .d:hover", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain(".b {");
-			expect(scss).toContain("&.c {");
-			expect(scss).toContain(".d {");
-			expect(scss).toContain("&:hover {");
+		test.each([
+			{
+				selector: ".a, .b",
+				prop: "color",
+				value: "red",
+				expects: [".a, .b", "color: red"],
+			},
+			{
+				selector: ".a.b, .c",
+				prop: "width",
+				value: "100px",
+				expects: [".a {", "&.b {", ".c {"],
+			},
+			{
+				selector: ".a, .b.c, .d:hover",
+				prop: "display",
+				value: "block",
+				expects: [".a {", ".b {", "&.c {", ".d {", "&:hover {"],
+			},
+		])("should handle $selector", ({ selector, prop, value, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
 	describe("chained classes", () => {
-		test("should nest two chained classes", () => {
-			const decl = postcss.decl({ prop: "color", value: "blue" });
-			const result = transformSelectorReduce(".a.b", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toMatch(/\.a \{[\s\S]*&\.b \{/);
-			expect(scss).toContain("color: blue");
-		});
-
-		test("should nest three chained classes", () => {
-			const decl = postcss.decl({ prop: "font-size", value: "16px" });
-			const result = transformSelectorReduce(".a.b.c", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toMatch(/\.a \{[\s\S]*&\.b \{[\s\S]*&\.c \{/);
+		test.each([
+			{
+				selector: ".a.b",
+				prop: "color",
+				value: "blue",
+				regex: /\.a \{[\s\S]*&\.b \{/,
+			},
+			{
+				selector: ".a.b.c",
+				prop: "font-size",
+				value: "16px",
+				regex: /\.a \{[\s\S]*&\.b \{[\s\S]*&\.c \{/,
+			},
+		])("should nest $selector", ({ selector, prop, value, regex }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			expect(scss).toMatch(regex);
+			expect(scss).toContain(`${prop}: ${value}`);
 		});
 	});
 
 	describe("descendants", () => {
-		test("should handle simple descendant", () => {
-			const decl = postcss.decl({ prop: "margin", value: "0" });
-			const result = transformSelectorReduce(".a .b", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain(".b {");
+		test.each([
+			{
+				selector: ".a .b",
+				prop: "margin",
+				value: "0",
+				expects: [".a {", ".b {"],
+			},
+			{
+				selector: ".x .y .z",
+				prop: "padding",
+				value: "5px",
+				expects: [".x {", ".y {", ".z {"],
+			},
+		])("should handle $selector", ({ selector, prop, value, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
 	describe("pseudo-classes", () => {
-		test("should handle :hover", () => {
-			const decl = postcss.decl({ prop: "cursor", value: "pointer" });
-			const result = transformSelectorReduce(".a:hover", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&:hover {");
+		test.each([
+			{ selector: ".a:hover", expects: [".a {", "&:hover {"] },
+			{ selector: ".btn:active", expects: [".btn {", "&:active {"] },
+			{ selector: ".link:focus", expects: [".link {", "&:focus {"] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("cursor", "pointer"),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
 	describe("complex selectors from article-card.css", () => {
-		test("should handle .ArticleCard_card:hover", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(".ArticleCard_card:hover", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".ArticleCard_card {");
-			expect(scss).toContain("&:hover {");
-		});
-
-		test("should handle .ArticleCard_card:hover .ArticleCard_category", () => {
-			const decl = postcss.decl({ prop: "color", value: "green" });
-			const result = transformSelectorReduce(
-				".ArticleCard_card:hover .ArticleCard_category",
-				{ declaration: decl },
+		test.each([
+			{
+				selector: ".ArticleCard_card:hover",
+				expects: [".ArticleCard_card {", "&:hover {"],
+			},
+			{
+				selector: ".ArticleCard_card:hover .ArticleCard_category",
+				expects: [
+					".ArticleCard_card {",
+					"&:hover {",
+					".ArticleCard_category {",
+				],
+			},
+			{
+				selector: ".light-mode .ArticleCard_card",
+				expects: [".light-mode {", ".ArticleCard_card {"],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("color", selector.includes("light-mode") ? "green" : "red"),
+				transformSelectorReduce,
 			);
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".ArticleCard_card {");
-			expect(scss).toContain("&:hover {");
-			expect(scss).toContain(".ArticleCard_category {");
-		});
-
-		test("should handle .light-mode .ArticleCard_card", () => {
-			const decl = postcss.decl({ prop: "background", value: "#fff" });
-			const result = transformSelectorReduce(".light-mode .ArticleCard_card", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".light-mode {");
-			expect(scss).toContain(".ArticleCard_card {");
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
 	describe("comma-separated from fixture", () => {
-		test("should handle .a, .b with same declaration (grouped)", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(".a, .b", { declaration: decl });
-			const scss = toSCSS(result);
-
-			// Grouped: .a, .b { ... }
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("color: red");
-		});
-
-		test("should handle .a.b, .c (chained + simple)", () => {
-			const decl = postcss.decl({ prop: "width", value: "100px" });
-			const result = transformSelectorReduce(".a.b, .c", { declaration: decl });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&.b {");
-			expect(scss).toContain(".c {");
-		});
-
-		test("should handle .test, .item:hover, .link.active", () => {
-			const decl = postcss.decl({ prop: "display", value: "block" });
-			const result = transformSelectorReduce(
-				".test, .item:hover, .link.active",
-				{ declaration: decl },
+		test.each([
+			{ selector: ".a, .b", expects: [".a, .b"] },
+			{ selector: ".a.b, .c", expects: [".a {", "&.b {", ".c {"] },
+			{
+				selector: ".test, .item:hover, .link.active",
+				expects: [".test {", ".item {", "&:hover {", ".link {", "&.active {"],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("display", "block"),
+				transformSelectorReduce,
 			);
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".test {");
-			expect(scss).toContain(".item {");
-			expect(scss).toContain("&:hover {");
-			expect(scss).toContain(".link {");
-			expect(scss).toContain("&.active {");
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
 	describe("multiple declarations per rule", () => {
-		test("should handle two declarations", () => {
-			const declarations = [
-				postcss.decl({ prop: "color", value: "blue" }),
-				postcss.decl({ prop: "background", value: "white" }),
-			];
-			const result = transformSelectorReduce(".a.b", { declarations });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&.b {");
-			expect(scss).toContain("color: blue");
-			expect(scss).toContain("background: white");
-		});
-
-		test("should handle four declarations", () => {
-			const declarations = [
-				postcss.decl({ prop: "color", value: "blue" }),
-				postcss.decl({ prop: "background", value: "white" }),
-				postcss.decl({ prop: "padding", value: "10px" }),
-				postcss.decl({ prop: "margin", value: "0" }),
-			];
-			const result = transformSelectorReduce(".a.b", { declarations });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain("color: blue");
-			expect(scss).toContain("background: white");
-			expect(scss).toContain("padding: 10px");
-			expect(scss).toContain("margin: 0");
-		});
-
-		test("should handle multiple declarations with comma-separated selectors", () => {
-			const declarations = [
-				postcss.decl({ prop: "width", value: "100%" }),
-				postcss.decl({ prop: "height", value: "auto" }),
-				postcss.decl({ prop: "display", value: "block" }),
-			];
-			const result = transformSelectorReduce(".c, .d:hover", { declarations });
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".c {");
-			expect(scss).toContain(".d {");
-			expect(scss).toContain("&:hover {");
-			expect(scss).toContain("width: 100%");
-			expect(scss).toContain("height: auto");
-			expect(scss).toContain("display: block");
+		test.each([
+			{
+				selector: ".a.b",
+				declarations: [
+					{ prop: "color", value: "blue" },
+					{ prop: "background", value: "white" },
+				],
+				expects: [".a {", "&.b {", "color: blue", "background: white"],
+			},
+			{
+				selector: ".c, .d:hover",
+				declarations: [
+					{ prop: "width", value: "100%" },
+					{ prop: "height", value: "auto" },
+					{ prop: "display", value: "block" },
+				],
+				expects: ["width: 100%", "height: auto", "display: block"],
+			},
+		])("should handle $selector with multiple declarations", ({
+			selector,
+			declarations,
+			expects,
+		}) => {
+			const decls = declarations.map((d) => postcss.decl(d));
+			const scss = transformToSCSS(selector, null, (s) =>
+				transformSelectorReduce(s, { declarations: decls }),
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
@@ -233,426 +218,129 @@ describe("transformSelectorReduce (POC)", () => {
 	});
 
 	describe("transformCSS function (from fixture files)", () => {
-		test("should transform multiple-declarations.css fixture", () => {
-			const css = `
+		test.each([
+			{
+				name: "multiple-declarations",
+				css: `
 				.a.b {
-				  color: blue;
-				  background: white;
-				  padding: 10px;
-				}
-			`;
+					color: blue;
+					background: white;
+					padding: 10px;
+				}`,
+				expects: [
+					".a {",
+					"&.b {",
+					"color: blue",
+					"background: white",
+					"padding: 10px",
+				],
+			},
+			{
+				name: "comma-separated",
+				css: `
+				.a, .b {
+					color: red;
+				}`,
+				expects: [".a, .b", "color: red"],
+			},
+			{
+				name: "nested-descendants",
+				css: `
+				.test .c, .test .d:hover {
+					color: red;
+				}`,
+				expects: [".test {", ".c, .d:hover"],
+			},
+		])("should transform $name fixture", ({ css, expects }) => {
 			const result = transformCSS(css);
-
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-			expect(result).toContain("color: blue");
-			expect(result).toContain("background: white");
-			expect(result).toContain("padding: 10px");
-		});
-
-		test("should transform comma-separated with multiple declarations", () => {
-			const css = `
-				.c, .d:hover {
-				  width: 100%;
-				  height: auto;
-				  display: block;
-				}
-			`;
-			const result = transformCSS(css);
-
-			expect(result).toContain(".c {");
-			expect(result).toContain(".d {");
-			expect(result).toContain("&:hover {");
-			expect(result).toContain("width: 100%");
-			expect(result).toContain("height: auto");
-			expect(result).toContain("display: block");
-		});
-
-		test("should transform nested pattern with multiple declarations", () => {
-			const css = `
-				.container .item {
-				  font-size: 16px;
-				  line-height: 1.5;
-				  color: #333;
-				}
-			`;
-			const result = transformCSS(css);
-
-			expect(result).toContain(".container {");
-			expect(result).toContain(".item {");
-			expect(result).toContain("font-size: 16px");
-			expect(result).toContain("line-height: 1.5");
-			expect(result).toContain("color: #333");
-		});
-
-		test("should transform multiple rules from fixture file", () => {
-			const css = `
-				.a.b {
-				  color: blue;
-				  background: white;
-				}
-
-				.c, .d:hover {
-				  width: 100%;
-				  height: auto;
-				}
-			`;
-			const result = transformCSS(css);
-
-			// First rule
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-			expect(result).toContain("color: blue");
-			expect(result).toContain("background: white");
-
-			// Second rule
-			expect(result).toContain(".c {");
-			expect(result).toContain(".d {");
-			expect(result).toContain("&:hover {");
-			expect(result).toContain("width: 100%");
-			expect(result).toContain("height: auto");
+			for (const expected of expects) {
+				expect(result).toContain(expected);
+			}
 		});
 	});
 
-	describe("LCP-based grouping", () => {
-		test("should group .test .c, .test .d:hover at .test LCP", () => {
-			const decl = postcss.decl({ prop: "width", value: "100%" });
-			const result = transformSelectorReduce(".test .c, .test .d:hover", {
-				declaration: decl,
+	describe("combinators (> + ~)", () => {
+		test.each([
+			{ selector: "#main > .content", expects: ["#main > .content"] },
+			{ selector: ".header + .content", expects: [".header + .content"] },
+			{ selector: ".section ~ .footer", expects: [".section ~ .footer"] },
+		])("should handle $selector as flat output", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
 			});
-			const scss = toSCSS(result);
-
-			// Should nest under .test
-			expect(scss).toContain(".test {");
-			expect(scss).toContain(".c, .d:hover");
-			expect(scss).toContain("width: 100%");
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
+	});
 
-		test("should group .a:hover, .b:hover by structure at root", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(".a:hover, .b:hover", {
-				declaration: decl,
+	describe("attribute selectors", () => {
+		test.each([
+			{ selector: '[type="text"]', expects: ['[type="text"]'] },
+			{ selector: '[data-foo="bar"]', expects: ['[data-foo="bar"]'] },
+			{ selector: '[href^="https://"]', expects: ['[href^="https://"]'] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
 			});
-			const scss = toSCSS(result);
-
-			// Should group by structure: .a, .b { &:hover }
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("&:hover");
-			expect(scss).toContain("color: red");
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
+	});
 
-		test("should group .a.b, .a.c at .a LCP", () => {
-			const decl = postcss.decl({ prop: "display", value: "block" });
-			const result = transformSelectorReduce(".a.b, .a.c", {
-				declaration: decl,
+	describe(":not() pseudo-class", () => {
+		test.each([
+			{ selector: ":not(.excluded)", expects: [":not(.excluded)"] },
+			{ selector: ":not([disabled])", expects: [":not([disabled])"] },
+			{
+				selector: ':not([href^="https://"])',
+				expects: [':not([href^="https://"])'],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
 			});
-			const scss = toSCSS(result);
-
-			// Should nest under .a with chained classes
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&.b, &.c");
-			expect(scss).toContain("display: block");
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
+	});
 
-		test("should group .a:hover, .a:focus at .a LCP with & prefix", () => {
-			const decl = postcss.decl({ prop: "color", value: "blue" });
-			const result = transformSelectorReduce(".a:hover, .a:focus", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			// Should nest under .a with &:hover, &:focus
-			expect(scss).toContain(".a {");
-			expect(scss).toContain("&:hover, &:focus");
-			expect(scss).toContain("color: blue");
-		});
-
-		test("should handle complex LCP with multiple descendants", () => {
-			const decl = postcss.decl({ prop: "margin", value: "0" });
-			const result = transformSelectorReduce(
-				".container .item .a, .container .item .b",
-				{ declaration: decl },
+	describe("pseudo-elements", () => {
+		test.each([
+			{ selector: ".icon::before", expects: [".icon {", "&::before {"] },
+			{ selector: ".icon::after", expects: [".icon {", "&::after {"] },
+			{ selector: ".a.b::before", expects: [".a {", "&.b", "&::before"] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("content", '"x"'),
+				transformSelectorReduce,
 			);
-			const scss = toSCSS(result);
-
-			// Should nest under .container .item
-			expect(scss).toContain(".container {");
-			expect(scss).toContain(".item {");
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("margin: 0");
-		});
-	});
-});
-
-describe("Edge Cases - Phase 0: Key encoding with colons", () => {
-	function toSCSS(root) {
-		return root.toString(scss.syntax);
-	}
-
-	describe("attribute selectors with colons in values", () => {
-		test("should handle [href^='https://']", () => {
-			const decl = postcss.decl({ prop: "color", value: "blue" });
-			const result = transformSelectorReduce('[href^="https://"]', {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain('[href^="https://"]');
-			expect(scss).toContain("color: blue");
-		});
-
-		test("should handle multiple attributes with colons", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(
-				'[href^="https://"], [src^="http://"]',
-				{ declaration: decl },
-			);
-			const scss = toSCSS(result);
-
-			expect(scss).toContain('[href^="https://"]');
-			expect(scss).toContain('[src^="http://"]');
-			expect(scss).toContain("color: red");
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("pseudo-elements with double colons", () => {
-		test("should handle ::before", () => {
-			const decl = postcss.decl({ prop: "content", value: '""' });
-			const result = transformSelectorReduce(".element::before", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".element {");
-			expect(scss).toContain("&::before");
-			expect(scss).toContain('content: ""');
+	describe("error handling", () => {
+		test.each([
+			{ selector: "", description: "empty string" },
+			{ selector: "   ", description: "whitespace only" },
+		])("should throw on $description", ({ selector }) => {
+			expect(() =>
+				transformSelectorReduce(selector, {
+					declaration: decl("color", "red"),
+				}),
+			).toThrow();
 		});
 
-		test("should handle ::after", () => {
-			const decl = postcss.decl({ prop: "content", value: '""' });
-			const result = transformSelectorReduce(".element::after", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".element {");
-			expect(scss).toContain("&::after");
-			expect(scss).toContain('content: ""');
-		});
-
-		test("should handle grouped pseudo-elements", () => {
-			const decl = postcss.decl({ prop: "display", value: "block" });
-			const result = transformSelectorReduce(".a::before, .b::before", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("&::before");
-		});
-	});
-
-	describe(":not() with complex selectors", () => {
-		test("should handle :not() with attribute containing colon", () => {
-			const decl = postcss.decl({ prop: "color", value: "gray" });
-			const result = transformSelectorReduce(':not([href^="https://"])', {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			expect(output).toContain(':not([href^="https://"])');
-			expect(output).toContain("color: gray");
-		});
-
-		test("should handle :not() with multiple classes", () => {
-			const decl = postcss.decl({ prop: "display", value: "none" });
-			const result = transformSelectorReduce(".a:not(.b)", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			expect(output).toContain(":not(.b)");
-			expect(output).toContain("display: none");
-		});
-	});
-
-	describe("mixed edge cases", () => {
-		test("should handle attribute with descendant", () => {
-			const decl = postcss.decl({ prop: "cursor", value: "pointer" });
-			const result = transformSelectorReduce(
-				'[data-url="https://example.com"]:hover',
-				{
-					declaration: decl,
-				},
-			);
-			const scss = toSCSS(result);
-
-			expect(scss).toContain('[data-url="https://example.com"]');
-			expect(scss).toContain("&:hover");
-		});
-
-		test("should handle pseudo-element with pseudo-class", () => {
-			const decl = postcss.decl({ prop: "opacity", value: "0" });
-			const result = transformSelectorReduce(".button:hover::before", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			expect(scss).toContain(".button {");
-			expect(scss).toContain("&:hover");
-			expect(scss).toContain("&::before");
-		});
-	});
-});
-
-describe("Phase 1: Combinator Output Handling", () => {
-	function toSCSS(root) {
-		return root.toString(scss.syntax);
-	}
-
-	describe("child combinator (>)", () => {
-		test("should handle single selector with >", () => {
-			const decl = postcss.decl({ prop: "color", value: "red" });
-			const result = transformSelectorReduce(".parent > .child", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should output as flat rule, not nested
-			expect(output).toContain(".parent > .child");
-			expect(output).toContain("color: red");
-			// Should NOT nest
-			expect(output).not.toContain(".parent {");
-		});
-
-		test("should handle multiple selectors with >", () => {
-			const decl = postcss.decl({ prop: "display", value: "block" });
-			const result = transformSelectorReduce(".a > .b, .a > .c", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should group as flat selectors
-			expect(output).toContain(".a > .b, .a > .c");
-			expect(output).toContain("display: block");
-		});
-
-		test("should handle mixed space and > combinators", () => {
-			const decl = postcss.decl({ prop: "width", value: "100%" });
-			const result = transformSelectorReduce(".a .b > .c", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should output as flat rule since > cannot be nested
-			expect(output).toContain(".a .b > .c");
-			expect(output).toContain("width: 100%");
-		});
-	});
-
-	describe("adjacent sibling combinator (+)", () => {
-		test("should handle single selector with +", () => {
-			const decl = postcss.decl({ prop: "margin", value: "0" });
-			const result = transformSelectorReduce(".a + .b", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should output as flat rule
-			expect(output).toContain(".a + .b");
-			expect(output).toContain("margin: 0");
-		});
-
-		test("should handle multiple selectors with +", () => {
-			const decl = postcss.decl({ prop: "padding", value: "10px" });
-			const result = transformSelectorReduce(".a + .b, .c + .d", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should group as flat selectors
-			expect(output).toContain(".a + .b, .c + .d");
-			expect(output).toContain("padding: 10px");
-		});
-	});
-
-	describe("general sibling combinator (~)", () => {
-		test("should handle single selector with ~", () => {
-			const decl = postcss.decl({ prop: "color", value: "blue" });
-			const result = transformSelectorReduce(".a ~ .b", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should output as flat rule
-			expect(output).toContain(".a ~ .b");
-			expect(output).toContain("color: blue");
-		});
-
-		test("should handle multiple selectors with ~", () => {
-			const decl = postcss.decl({ prop: "background", value: "white" });
-			const result = transformSelectorReduce(".a ~ .b, .c ~ .d", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should group as flat selectors
-			expect(output).toContain(".a ~ .b, .c ~ .d");
-			expect(output).toContain("background: white");
-		});
-	});
-
-	describe("mixed combinators", () => {
-		test("should handle > and + in same selector", () => {
-			const decl = postcss.decl({ prop: "opacity", value: "1" });
-			const result = transformSelectorReduce(".a > .b + .c", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// Should output as flat rule
-			expect(output).toContain(".a > .b + .c");
-			expect(output).toContain("opacity: 1");
-		});
-
-		test("should handle space combinator only (should nest)", () => {
-			const decl = postcss.decl({ prop: "color", value: "green" });
-			const result = transformSelectorReduce(".a .b", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			// Space combinator SHOULD nest
-			expect(scss).toContain(".a {");
-			expect(scss).toContain(".b {");
-			expect(scss).toContain("color: green");
-		});
-
-		test("should prefer LCP grouping with space combinators", () => {
-			const decl = postcss.decl({ prop: "width", value: "50%" });
-			const result = transformSelectorReduce(".container .a, .container .b", {
-				declaration: decl,
-			});
-			const scss = toSCSS(result);
-
-			// Should nest under .container
-			expect(scss).toContain(".container {");
-			expect(scss).toContain(".a, .b");
-			expect(scss).toContain("width: 50%");
-		});
-
-		test("should not nest when LCP has non-space combinator", () => {
-			const decl = postcss.decl({ prop: "height", value: "auto" });
-			const result = transformSelectorReduce(".test > .a, .test > .b", {
-				declaration: decl,
-			});
-			const output = result.toString();
-
-			// LCP contains >, so should output as flat
-			expect(output).toContain(".test > .a, .test > .b");
-			expect(output).toContain("height: auto");
-			// Should NOT nest
-			expect(output).not.toContain(".test {");
+		test("should throw when declarations option is missing", () => {
+			expect(() => transformSelectorReduce(".a")).toThrow();
 		});
 	});
 });

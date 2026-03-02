@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
+/**
+ * Selector builder tests using parameterized testing patterns.
+ *
+ * Tests the helper utilities for building SCSS rule selectors.
+ */
 
+import { describe, expect, test } from "bun:test";
 import postcss from "postcss";
 import {
 	buildFromNodes,
@@ -13,109 +18,134 @@ import { SelectorTrie } from "../../src/poc/selector-trie.js";
 
 describe("selector-builder", () => {
 	describe("needsAmpersand", () => {
-		test("should return false for first rule", () => {
-			const node = { type: "class", value: ".test" };
-			expect(needsAmpersand(node, null, true)).toBe(false);
-		});
-
-		test("should return false after space combinator", () => {
-			const node = { type: "class", value: ".child" };
-			const prevNode = { type: "combinator", value: " " };
-			expect(needsAmpersand(node, prevNode, false)).toBe(false);
-		});
-
-		test("should return true for pseudo-class", () => {
-			const node = { type: "pseudo", value: ":hover" };
-			expect(needsAmpersand(node, null, false)).toBe(true);
-		});
-
-		test("should return true for class", () => {
-			const node = { type: "class", value: ".active" };
-			expect(needsAmpersand(node, null, false)).toBe(true);
-		});
-
-		test("should return true for id", () => {
-			const node = { type: "id", value: "#main" };
-			expect(needsAmpersand(node, null, false)).toBe(true);
-		});
-
-		test("should return false for tag (no prefix needed)", () => {
-			const node = { type: "tag", value: "div" };
-			expect(needsAmpersand(node, null, false)).toBe(false);
+		test.each([
+			{
+				node: { type: "class", value: ".test" },
+				prevNode: null,
+				isFirst: true,
+				expected: false,
+				description: "first rule",
+			},
+			{
+				node: { type: "class", value: ".child" },
+				prevNode: { type: "combinator", value: " " },
+				isFirst: false,
+				expected: false,
+				description: "after space combinator",
+			},
+			{
+				node: { type: "pseudo", value: ":hover" },
+				prevNode: null,
+				isFirst: false,
+				expected: true,
+				description: "pseudo-class",
+			},
+			{
+				node: { type: "class", value: ".active" },
+				prevNode: null,
+				isFirst: false,
+				expected: true,
+				description: "chained class",
+			},
+			{
+				node: { type: "id", value: "#main" },
+				prevNode: null,
+				isFirst: false,
+				expected: true,
+				description: "chained id",
+			},
+			{
+				node: { type: "tag", value: "div" },
+				prevNode: null,
+				isFirst: false,
+				expected: false,
+				description: "tag (no prefix)",
+			},
+		])("should return $expected for $description", ({
+			node,
+			prevNode,
+			isFirst,
+			expected,
+		}) => {
+			expect(needsAmpersand(node, prevNode, isFirst)).toBe(expected);
 		});
 	});
 
 	describe("buildRuleSelector", () => {
-		test("should return value directly for first rule", () => {
-			const node = { type: "class", value: ".test" };
-			expect(buildRuleSelector(node, null, true)).toBe(".test");
-		});
-
-		test("should return value after space combinator", () => {
-			const node = { type: "class", value: ".child" };
-			const prevNode = { type: "combinator", value: " " };
-			expect(buildRuleSelector(node, prevNode, false)).toBe(".child");
-		});
-
-		test("should add & for chained pseudo-class", () => {
-			const node = { type: "pseudo", value: ":hover" };
-			const prevNode = { type: "class", value: ".parent" };
-			expect(buildRuleSelector(node, prevNode, false)).toBe("&:hover");
-		});
-
-		test("should add & for chained class", () => {
-			const node = { type: "class", value: ".active" };
-			const prevNode = { type: "class", value: ".parent" };
-			expect(buildRuleSelector(node, prevNode, false)).toBe("&.active");
+		test.each([
+			{
+				node: { type: "class", value: ".test" },
+				prevNode: null,
+				isFirst: true,
+				expected: ".test",
+				description: "first rule",
+			},
+			{
+				node: { type: "class", value: ".child" },
+				prevNode: { type: "combinator", value: " " },
+				isFirst: false,
+				expected: ".child",
+				description: "after space combinator",
+			},
+			{
+				node: { type: "pseudo", value: ":hover" },
+				prevNode: { type: "class", value: ".parent" },
+				isFirst: false,
+				expected: "&:hover",
+				description: "chained pseudo-class",
+			},
+			{
+				node: { type: "class", value: ".active" },
+				prevNode: { type: "class", value: ".parent" },
+				isFirst: false,
+				expected: "&.active",
+				description: "chained class",
+			},
+		])("should return $expected for $description", ({
+			node,
+			prevNode,
+			isFirst,
+			expected,
+		}) => {
+			expect(buildRuleSelector(node, prevNode, isFirst)).toBe(expected);
 		});
 	});
 
 	describe("buildFromNodes", () => {
-		test("should build nested rules from nodes", () => {
-			const nodes = [
-				{ type: "class", value: ".parent" },
-				{ type: "combinator", value: " " },
-				{ type: "class", value: ".child" },
-			];
-			const declarations = [postcss.decl({ prop: "color", value: "red" })];
+		test.each([
+			{
+				nodes: [
+					{ type: "class", value: ".parent" },
+					{ type: "combinator", value: " " },
+					{ type: "class", value: ".child" },
+				],
+				declaration: { prop: "color", value: "red" },
+				expects: [".parent {", ".child {", "color: red"],
+			},
+			{
+				nodes: [{ type: "class", value: ".test" }],
+				declaration: { prop: "width", value: "100px" },
+				expects: [".test {", "width: 100px"],
+			},
+			{
+				nodes: [
+					{ type: "class", value: ".button" },
+					{ type: "pseudo", value: ":hover" },
+				],
+				declaration: { prop: "cursor", value: "pointer" },
+				expects: [".button {", "&:hover {", "cursor: pointer"],
+			},
+		])("should build nested rules", ({ nodes, declaration, expects }) => {
+			const declarations = [postcss.decl(declaration)];
 			const root = postcss.root();
 
-			const _leafRule = buildFromNodes(nodes, root, declarations);
+			const leafRule = buildFromNodes(nodes, root, declarations);
 
-			expect(_leafRule).not.toBeNull();
+			expect(leafRule).not.toBeNull();
 			const output = root.toString();
-			expect(output).toContain(".parent {");
-			expect(output).toContain(".child {");
-			expect(output).toContain("color: red");
-		});
-
-		test("should handle single node", () => {
-			const nodes = [{ type: "class", value: ".test" }];
-			const declarations = [postcss.decl({ prop: "width", value: "100px" })];
-			const root = postcss.root();
-
-			const _leafRule = buildFromNodes(nodes, root, declarations);
-
-			expect(_leafRule).not.toBeNull();
-			const output = root.toString();
-			expect(output).toContain(".test {");
-			expect(output).toContain("width: 100px");
-		});
-
-		test("should handle pseudo-class", () => {
-			const nodes = [
-				{ type: "class", value: ".button" },
-				{ type: "pseudo", value: ":hover" },
-			];
-			const declarations = [postcss.decl({ prop: "cursor", value: "pointer" })];
-			const root = postcss.root();
-
-			const _leafRule = buildFromNodes(nodes, root, declarations);
-
-			const output = root.toString();
-			expect(output).toContain(".button {");
-			expect(output).toContain("&:hover {");
-			expect(output).toContain("cursor: pointer");
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
 
 		test("should return null for empty nodes", () => {
@@ -123,27 +153,39 @@ describe("selector-builder", () => {
 			const declarations = [postcss.decl({ prop: "color", value: "red" })];
 			const root = postcss.root();
 
-			const _leafRule = buildFromNodes(nodes, root, declarations);
+			const leafRule = buildFromNodes(nodes, root, declarations);
 
-			expect(_leafRule).toBeNull();
+			expect(leafRule).toBeNull();
 		});
 	});
 
 	describe("buildFromPath", () => {
-		test("should build rules from LCP path", () => {
-			const path = [
-				SelectorTrie.createKey("class", ".parent"),
-				SelectorTrie.createKey("combinator", " "),
-				SelectorTrie.createKey("class", ".child"),
-			];
+		test.each([
+			{
+				path: [
+					SelectorTrie.createKey("class", ".parent"),
+					SelectorTrie.createKey("combinator", " "),
+					SelectorTrie.createKey("class", ".child"),
+				],
+				expects: [".parent {", ".child {"],
+			},
+			{
+				path: [
+					SelectorTrie.createKey("class", ".test"),
+					SelectorTrie.createKey("pseudo", ":hover"),
+				],
+				expects: [".test {", "&:hover {"],
+			},
+		])("should build rules from LCP path", ({ path, expects }) => {
 			const root = postcss.root();
 
-			const _lastRule = buildFromPath(path, SelectorTrie.parseKey, root);
+			const lastRule = buildFromPath(path, SelectorTrie.parseKey, root);
 
-			expect(_lastRule).not.toBeNull();
+			expect(lastRule).not.toBeNull();
 			const output = root.toString();
-			expect(output).toContain(".parent {");
-			expect(output).toContain(".child {");
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
 
 		test("should skip space combinators", () => {
@@ -165,41 +207,51 @@ describe("selector-builder", () => {
 			const path = [];
 			const root = postcss.root();
 
-			const _lastRule = buildFromPath(path, SelectorTrie.parseKey, root);
+			const lastRule = buildFromPath(path, SelectorTrie.parseKey, root);
 
-			expect(_lastRule).toBeNull();
+			expect(lastRule).toBeNull();
 		});
 	});
 
 	describe("buildFromTemplate", () => {
-		test("should build nested rules from selector group", () => {
-			const selectors = [
-				{
-					selector: ".a:hover",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "pseudo", value: ":hover" },
-					],
-				},
-				{
-					selector: ".b:focus",
-					nodes: [
-						{ type: "class", value: ".b" },
-						{ type: "pseudo", value: ":focus" },
-					],
-				},
-			];
-			const declarations = [postcss.decl({ prop: "color", value: "blue" })];
+		test.each([
+			{
+				selectors: [
+					{
+						selector: ".a:hover",
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":hover" },
+						],
+					},
+					{
+						selector: ".b:focus",
+						nodes: [
+							{ type: "class", value: ".b" },
+							{ type: "pseudo", value: ":focus" },
+						],
+					},
+				],
+				declaration: { prop: "color", value: "blue" },
+				expects: ["&:hover, &:focus", "color: blue"],
+			},
+		])("should build nested rules from selector group", ({
+			selectors,
+			declaration,
+			expects,
+		}) => {
+			const declarations = [postcss.decl(declaration)];
 			const root = postcss.root();
 			const parentRule = postcss.rule({ selector: ".a, .b" });
 			root.append(parentRule);
 
-			const _leafRule = buildFromTemplate(selectors, parentRule, declarations);
+			const leafRule = buildFromTemplate(selectors, parentRule, declarations);
 
-			expect(_leafRule).not.toBeNull();
+			expect(leafRule).not.toBeNull();
 			const output = root.toString();
-			expect(output).toContain("&:hover, &:focus");
-			expect(output).toContain("color: blue");
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
 		});
 
 		test("should return null for empty selectors", () => {
@@ -209,125 +261,95 @@ describe("selector-builder", () => {
 			const parentRule = postcss.rule({ selector: ".test" });
 			root.append(parentRule);
 
-			const _leafRule = buildFromTemplate(selectors, parentRule, declarations);
+			const leafRule = buildFromTemplate(selectors, parentRule, declarations);
 
-			expect(_leafRule).toBeNull();
+			expect(leafRule).toBeNull();
 		});
 	});
 
 	describe("buildSuffixSelectors", () => {
-		test("should build suffix selectors with & prefix", () => {
-			const selectors = [
-				{
-					selector: ".a:hover",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "pseudo", value: ":hover" },
-					],
-				},
-				{
-					selector: ".a:focus",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "pseudo", value: ":focus" },
-					],
-				},
-			];
-			const lastPathNodeWasSpaceCombinator = false;
-
+		test.each([
+			{
+				selectors: [
+					{
+						selector: ".a:hover",
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":hover" },
+						],
+					},
+					{
+						selector: ".a:focus",
+						nodes: [
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":focus" },
+						],
+					},
+				],
+				pathLength: 1,
+				lastPathNodeWasSpaceCombinator: false,
+				expected: "&:hover, &:focus",
+			},
+			{
+				selectors: [
+					{
+						selector: ".parent .a",
+						nodes: [
+							{ type: "class", value: ".parent" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".a" },
+						],
+					},
+					{
+						selector: ".parent .b",
+						nodes: [
+							{ type: "class", value: ".parent" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".b" },
+						],
+					},
+				],
+				pathLength: 2,
+				lastPathNodeWasSpaceCombinator: true,
+				expected: ".a, .b",
+			},
+			{
+				selectors: [
+					{
+						selector: ".test .a:hover",
+						nodes: [
+							{ type: "class", value: ".test" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":hover" },
+						],
+					},
+					{
+						selector: ".test .a:active",
+						nodes: [
+							{ type: "class", value: ".test" },
+							{ type: "combinator", value: " " },
+							{ type: "class", value: ".a" },
+							{ type: "pseudo", value: ":active" },
+						],
+					},
+				],
+				pathLength: 3,
+				lastPathNodeWasSpaceCombinator: false,
+				expected: "&:hover, &:active",
+			},
+		])("should build suffix selectors correctly", ({
+			selectors,
+			pathLength,
+			lastPathNodeWasSpaceCombinator,
+			expected,
+		}) => {
 			const result = buildSuffixSelectors(
 				selectors,
-				1,
+				pathLength,
 				lastPathNodeWasSpaceCombinator,
 			);
-
-			expect(result).toBe("&:hover, &:focus");
-		});
-
-		test("should build suffix selectors without & prefix after space", () => {
-			const selectors = [
-				{
-					selector: ".a .b",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					selector: ".a .c",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "combinator", value: " " },
-						{ type: "class", value: ".c" },
-					],
-				},
-			];
-			const lastPathNodeWasSpaceCombinator = true;
-
-			const result = buildSuffixSelectors(
-				selectors,
-				2,
-				lastPathNodeWasSpaceCombinator,
-			);
-
-			expect(result).toBe(".b, .c");
-		});
-
-		test("should handle class suffixes", () => {
-			const selectors = [
-				{
-					selector: ".a.b",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "class", value: ".b" },
-					],
-				},
-				{
-					selector: ".a.c",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "class", value: ".c" },
-					],
-				},
-			];
-			const lastPathNodeWasSpaceCombinator = false;
-
-			const result = buildSuffixSelectors(
-				selectors,
-				1,
-				lastPathNodeWasSpaceCombinator,
-			);
-
-			expect(result).toBe("&.b, &.c");
-		});
-
-		test("should handle id suffixes", () => {
-			const selectors = [
-				{
-					selector: ".a#main",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "id", value: "#main" },
-					],
-				},
-				{
-					selector: ".a#sub",
-					nodes: [
-						{ type: "class", value: ".a" },
-						{ type: "id", value: "#sub" },
-					],
-				},
-			];
-			const lastPathNodeWasSpaceCombinator = false;
-
-			const result = buildSuffixSelectors(
-				selectors,
-				1,
-				lastPathNodeWasSpaceCombinator,
-			);
-
-			expect(result).toBe("&#main, &#sub");
+			expect(result).toBe(expected);
 		});
 	});
 });
