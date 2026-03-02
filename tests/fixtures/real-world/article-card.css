@@ -1,0 +1,26 @@
+.ArticleCard_card {
+  color: blue;
+  background: white;
+}
+
+.ArticleCard_card:hover {
+  color: red;
+}
+
+.ArticleCard_card:hover .ArticleCard_category {
+  color: green;
+}
+
+.light-mode .ArticleCard_card {
+  background: #fff;
+}
+
+.light-mode .ArticleCard_card:hover .ArticleCard_title {
+  color: #000;
+}
+
+@media (max-width: 768px) {
+  .ArticleCard_card {
+    padding: 10px;
+  }
+}

@@ -1,0 +1,24 @@
+.a {
+	&.b {
+		color: red;
+	}
+	&.b {
+		&.c {
+			background: blue;
+		}
+	}
+}
+
+#id1 {
+	&#id2 {
+		font-size: 16px;
+	}
+}
+
+.a {
+	&.b {
+		&#id {
+			border: 1px solid black;
+		}
+	}
+}

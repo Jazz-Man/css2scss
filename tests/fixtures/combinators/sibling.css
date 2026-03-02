@@ -1,0 +1,11 @@
+.a + .b {
+  color: red;
+}
+
+.a ~ .b {
+  background: blue;
+}
+
+.a > .b + .c ~ .d {
+  margin: 0;
+}

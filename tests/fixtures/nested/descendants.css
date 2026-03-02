@@ -1,0 +1,11 @@
+.a .b {
+  color: red;
+}
+
+.a .b .c {
+  background: blue;
+}
+
+div .a .b {
+  margin: 0;
+}
