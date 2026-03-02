@@ -51,6 +51,11 @@ program
 			const statResult = await stat(input);
 			const isDirectory = statResult.isDirectory();
 
+			// Warn if input file doesn't have .css extension
+			if (!isDirectory && !input.endsWith(".css")) {
+				logger.warn(`Input file does not have .css extension: ${input}`);
+			}
+
 			if (isDirectory) {
 				await convertDirectory(input, output, options);
 			} else {
@@ -63,7 +68,16 @@ program
 				logger.success(`Conversion completed in ${duration}ms!`);
 			}
 		} catch (error) {
-			logger.error(`Conversion failed: ${error.message}`);
+			// Provide more specific error messages based on error codes
+			if (error.code === "ENOENT") {
+				logger.error(`File or directory not found: ${input}`);
+			} else if (error.code === "EACCES") {
+				logger.error(`Permission denied: ${input}`);
+			} else if (error.code === "EISDIR") {
+				logger.error(`Expected file but got directory: ${input}`);
+			} else {
+				logger.error(`Conversion failed: ${error.message}`);
+			}
 			if (options.verbose) {
 				console.error(error.stack);
 			}

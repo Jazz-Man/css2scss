@@ -20,6 +20,12 @@ import postcss from "postcss";
 import { COMBINATORS } from "./selector-trie.js";
 
 /**
+ * Regex pattern for detecting whitespace-only values (including multiline)
+ * Used to identify space combinators in selector nodes
+ */
+const WHITESPACE_ONLY = /^\s+$/;
+
+/**
  * Determine if a selector needs an ampersand prefix
  * @param {{type: string, value: string}} node - Current node
  * @param {{type: string, value: string}|null} prevNode - Previous node in sequence
@@ -61,7 +67,8 @@ export function buildRuleSelector(node, prevNode, isFirst) {
 
 	// After space combinator (including multiline whitespace), use value directly (descendant)
 	const prevWasSpaceCombinator =
-		prevNode?.type === "combinator" && /^\s+$/.test(prevNode?.value || "");
+		prevNode?.type === "combinator" &&
+		WHITESPACE_ONLY.test(prevNode?.value || "");
 	if (prevWasSpaceCombinator) {
 		return node.value;
 	}
@@ -88,7 +95,7 @@ export function buildFromNodes(nodes, root, declarations) {
 		const node = nodes[i];
 
 		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
-		if (node.type === "combinator" && /^\s+$/.test(node.value)) {
+		if (node.type === "combinator" && WHITESPACE_ONLY.test(node.value)) {
 			continue;
 		}
 
@@ -138,7 +145,7 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 		const node = templateNodes[i];
 
 		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
-		if (node.type === "combinator" && /^\s+$/.test(node.value)) {
+		if (node.type === "combinator" && WHITESPACE_ONLY.test(node.value)) {
 			continue;
 		}
 
@@ -153,7 +160,7 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 		const needsAmpersandPrefix =
 			(!prevNode ||
 				prevNode.type !== "combinator" ||
-				!/^\s+$/.test(prevNode.value)) &&
+				!WHITESPACE_ONLY.test(prevNode.value)) &&
 			(leafValues[0].startsWith(":") ||
 				leafValues[0].startsWith(".") ||
 				leafValues[0].startsWith("#"));
@@ -196,7 +203,7 @@ export function buildFromPath(path, parseKey, root) {
 		const { type: nodeType, value } = parseKey(key);
 
 		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
-		if (nodeType === "combinator" && /^\s+$/.test(value)) {
+		if (nodeType === "combinator" && WHITESPACE_ONLY.test(value)) {
 			continue;
 		}
 
@@ -252,7 +259,7 @@ export function buildSuffixSelectors(
 			const startsWithSpaceCombinator =
 				suffixNodes.length > 0 &&
 				suffixNodes[0].type === "combinator" &&
-				/^\s+$/.test(suffixNodes[0].value);
+				WHITESPACE_ONLY.test(suffixNodes[0].value);
 
 			// Build the suffix value
 			const suffix = suffixNodes.map((n) => n.value).join("");

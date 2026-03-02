@@ -45,9 +45,6 @@ css2scss src/css/ dist/scss/ --recursive
 # Custom output extension
 css2scss input.css --ext .sass
 
-# Remove comments
-css2scss input.css --no-comments
-
 # Verbose mode
 css2scss input.css -v
 
@@ -206,46 +203,58 @@ await convertDirectory('src/css/', 'dist/scss/', { recursive: true });
 
 ## Architecture
 
-The converter uses a 3-stage pipeline:
+The converter uses an LCP (Longest Common Prefix) trie-based approach for optimal selector grouping:
 
 ```
-CSS String → [Parser] → PostCSS AST → [Transformer] → Nested AST → [Generator] → SCSS String
+CSS String → PostCSS Parse → Selector Trie Insert → LCP Find → Build Nested → SCSS Output
 ```
 
-### Parser (`src/core/parser.js`)
-- Uses PostCSS to parse CSS string into AST
-- Handles parsing errors gracefully
+### Core Modules
 
-### Transformer (`src/core/transformer.js`)
-- Uses **postcss-selector-parser** for AST-based selector analysis
-- No regex - relies on parser API for reliability
-- Groups selectors by path and declarations for comma-separated merging
-- Key functions:
-  - `getNodes()` - Extract AST nodes from selector
-  - `splitBaseChild()` - Split into base/child parts for nesting
-  - `parseSelectorPath()` - Build nesting path from AST
-  - `findOrCreateRuleAtPath()` - Create nested rule structure
+#### `src/core/transformer.js`
+- Main transformation orchestration
+- Strategy pattern for different selector types (single, flat, structure-based, LCP)
+- @media query handling with proper nesting
 
-### Generator (`src/index.js`)
-- Uses **postcss-scss** syntax stringifier for proper SCSS output
-- Maintains proper formatting and indentation
+#### `src/core/selector-trie.js`
+- Trie data structure for efficient LCP finding
+- Memory-efficient storage (selectors only at terminal nodes)
+- Support for all CSS selector types
+
+#### `src/core/selector-builder.js`
+- Helper utilities for building SCSS rule selectors
+- Ampersand (`&`) prefix handling
+- Support for all CSS combinator types
+
+#### `src/core/structure-grouper.js`
+- Structure-based grouping when no LCP exists
+- Groups selectors by structural patterns
+
+### Transformation Strategies
+
+The transformer uses a priority-based strategy dispatcher:
+
+1. **Single Selector** - When only one selector or LCP covers entire selector
+2. **Flat Output** - For non-space combinators (`>`, `+`, `~`)
+3. **Structure Grouping** - When no LCP exists between selectors
+4. **LCP Grouping** - Default strategy using longest common prefix
 
 ## Development
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Run CLI
-node bin/cli.js input.css
+bun run bin/cli.js input.css
 
 # Run tests
-npm test
+bun test
 
 # Build standalone executable
-npm run build
+bun run build
 
-# Lint/format
+# Lint/format (Biome)
 npx @biomejs/biome check .
 npx @biomejs/biome check --write .
 ```
@@ -255,26 +264,36 @@ npx @biomejs/biome check --write .
 ```
 css2scss/
 ├── bin/
-│   └── cli.js              # CLI entry point (Commander.js)
+│   └── cli.js                 # CLI entry point (Commander.js)
 ├── src/
+│   ├── index.js               # Public API exports
 │   ├── core/
-│   │   ├── parser.js        # CSS → AST parser
-│   │   └── transformer.js   # AST nesting transformer
-│   ├── index.js             # Main API exports
+│   │   ├── transformer.js     # Main transformation logic
+│   │   ├── selector-trie.js   # Trie for LCP finding
+│   │   ├── selector-builder.js # Selector building utilities
+│   │   └── structure-grouper.js # Structure-based grouping
 │   └── utils/
-│       ├── debug.js        # Debug utilities
-│       ├── file.js          # File I/O (Node.js fs/promises)
-│       └── logger.js       # CLI logger (Chalk)
+│       ├── file.js            # File I/O with validation
+│       ├── logger.js          # CLI logger (Chalk)
+│       └── debug.js           # Debug utilities
+├── tests/
+│   ├── transformer.test.js    # Core transformation tests
+│   ├── selector-trie.test.js  # Trie data structure tests
+│   ├── selector-builder.test.js # Selector utilities tests
+│   ├── structure-grouper.test.js # Structure grouping tests
+│   ├── edge-cases.test.js     # Edge case coverage
+│   ├── performance.test.js    # Performance benchmarks
+│   ├── index.test.js          # Public API tests
+│   └── file.test.js           # File utility tests
 ├── package.json
-├── biome.json              # Biome config (linter/formatter)
-└── CLAUDE.md               # Project documentation
+├── biome.json                 # Biome config (linter/formatter)
+└── CLAUDE.md                  # Project documentation
 ```
 
 ## Dependencies
 
 - **postcss** ^8.4.35 - CSS parsing and AST manipulation
 - **postcss-selector-parser** ^7.1.1 - Selector parsing and analysis
-- **postcss-scss** ^4.0.9 - SCSS syntax stringifier
 - **fast-glob** ^3.3.2 - Fast file pattern matching
 - **commander** ^12.0.0 - CLI framework
 - **chalk** ^5.3.0 - Terminal colors

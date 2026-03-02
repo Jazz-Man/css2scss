@@ -252,14 +252,15 @@ function buildLCP(group, declarations, root) {
 
 /**
  * Grouping strategies in priority order
- * @type {GroupingStrategy[]}
+ * Frozen to prevent accidental modification at runtime
+ * @type {ReadonlyArray<GroupingStrategy>}
  */
-const strategies = [
+const strategies = Object.freeze([
 	{ canHandle: canHandleSingle, build: buildSingle },
 	{ canHandle: canHandleFlat, build: buildFlat },
 	{ canHandle: canHandleStructure, build: buildStructure },
 	{ canHandle: canHandleLCP, build: buildLCP },
-];
+]);
 
 /**
  * Build nested rules for a group of selectors with common LCP
