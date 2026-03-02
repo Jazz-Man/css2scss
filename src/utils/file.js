@@ -1,5 +1,8 @@
-import { readFile as fsReadFile, writeFile as fsWriteFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
+import {
+	readFile as fsReadFile,
+	writeFile as fsWriteFile,
+} from "node:fs/promises";
 
 /**
  * Reads the content of a file.
