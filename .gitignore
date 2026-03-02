@@ -11,6 +11,7 @@ bun.lockb
 # Build outputs
 dist/
 build/
+*.bun-build
 *.css.map
 css2scss
 
