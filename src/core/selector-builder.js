@@ -59,9 +59,9 @@ export function buildRuleSelector(node, prevNode, isFirst) {
 		return node.value;
 	}
 
-	// After space combinator, use value directly (descendant)
+	// After space combinator (including multiline whitespace), use value directly (descendant)
 	const prevWasSpaceCombinator =
-		prevNode?.type === "combinator" && prevNode?.value === COMBINATORS.SPACE;
+		prevNode?.type === "combinator" && /^\s+$/.test(prevNode?.value || "");
 	if (prevWasSpaceCombinator) {
 		return node.value;
 	}
@@ -87,8 +87,8 @@ export function buildFromNodes(nodes, root, declarations) {
 	for (let i = 0; i < nodes.length; i++) {
 		const node = nodes[i];
 
-		// Skip space combinators - they're implicit in nesting
-		if (node.type === "combinator" && node.value === COMBINATORS.SPACE) {
+		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
+		if (node.type === "combinator" && /^\s+$/.test(node.value)) {
 			continue;
 		}
 
@@ -137,8 +137,8 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 	for (let i = 0; i < templateNodes.length; i++) {
 		const node = templateNodes[i];
 
-		// Skip space combinators - they're implicit in nesting
-		if (node.type === "combinator" && node.value === COMBINATORS.SPACE) {
+		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
+		if (node.type === "combinator" && /^\s+$/.test(node.value)) {
 			continue;
 		}
 
@@ -153,7 +153,7 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 		const needsAmpersandPrefix =
 			(!prevNode ||
 				prevNode.type !== "combinator" ||
-				prevNode.value !== COMBINATORS.SPACE) &&
+				!/^\s+$/.test(prevNode.value)) &&
 			(leafValues[0].startsWith(":") ||
 				leafValues[0].startsWith(".") ||
 				leafValues[0].startsWith("#"));
@@ -195,8 +195,8 @@ export function buildFromPath(path, parseKey, root) {
 		const key = path[i];
 		const { type: nodeType, value } = parseKey(key);
 
-		// Skip space combinators - they're implicit in nesting
-		if (nodeType === "combinator" && value === COMBINATORS.SPACE) {
+		// Skip whitespace combinators (space, multiline) - they're implicit in nesting
+		if (nodeType === "combinator" && /^\s+$/.test(value)) {
 			continue;
 		}
 
@@ -247,21 +247,23 @@ export function buildSuffixSelectors(
 		.map((s) => {
 			const suffixNodes = s.nodes.slice(pathLength);
 
-			// Check if suffix starts with a space combinator
+			// Check if suffix starts with a whitespace combinator (space, multiline)
 			// This means we're in descendant context
-			const startsWithSpaceCombinator = suffixNodes.length > 0 &&
+			const startsWithSpaceCombinator =
+				suffixNodes.length > 0 &&
 				suffixNodes[0].type === "combinator" &&
-				suffixNodes[0].value === COMBINATORS.SPACE;
+				/^\s+$/.test(suffixNodes[0].value);
 
 			// Build the suffix value
-			let suffix = suffixNodes.map((n) => n.value).join("");
-			let trimmed = suffix.trim();
+			const suffix = suffixNodes.map((n) => n.value).join("");
+			const trimmed = suffix.trim();
 
 			// Determine if & prefix is needed:
 			// - If LCP path ended with space combinator, suffix is descendant (no &)
 			// - If suffix starts with space combinator, first class after is descendant (no &)
 			// - Otherwise, if suffix starts with : . or #, it's chained (needs &)
-			const needsAmpersand = !lastPathNodeWasSpaceCombinator &&
+			const needsAmpersand =
+				!lastPathNodeWasSpaceCombinator &&
 				!startsWithSpaceCombinator &&
 				(trimmed.startsWith(":") ||
 					trimmed.startsWith(".") ||

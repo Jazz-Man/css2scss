@@ -228,7 +228,7 @@ function buildLCP(group, declarations, root) {
 	const lastPathNodeWasSpaceCombinator =
 		path.length > 0 &&
 		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
-		SelectorTrie.parseKey(path[path.length - 1]).value === COMBINATORS.SPACE;
+		/^\s+$/.test(SelectorTrie.parseKey(path[path.length - 1]).value);
 
 	const leafSelector = buildSuffixSelectors(
 		selectors,
