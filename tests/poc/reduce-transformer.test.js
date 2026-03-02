@@ -504,3 +504,155 @@ describe("Edge Cases - Phase 0: Key encoding with colons", () => {
 		});
 	});
 });
+
+describe("Phase 1: Combinator Output Handling", () => {
+	function toSCSS(root) {
+		return root.toString(scss.syntax);
+	}
+
+	describe("child combinator (>)", () => {
+		test("should handle single selector with >", () => {
+			const decl = postcss.decl({ prop: "color", value: "red" });
+			const result = transformSelectorReduce(".parent > .child", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should output as flat rule, not nested
+			expect(output).toContain(".parent > .child");
+			expect(output).toContain("color: red");
+			// Should NOT nest
+			expect(output).not.toContain(".parent {");
+		});
+
+		test("should handle multiple selectors with >", () => {
+			const decl = postcss.decl({ prop: "display", value: "block" });
+			const result = transformSelectorReduce(".a > .b, .a > .c", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should group as flat selectors
+			expect(output).toContain(".a > .b, .a > .c");
+			expect(output).toContain("display: block");
+		});
+
+		test("should handle mixed space and > combinators", () => {
+			const decl = postcss.decl({ prop: "width", value: "100%" });
+			const result = transformSelectorReduce(".a .b > .c", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should output as flat rule since > cannot be nested
+			expect(output).toContain(".a .b > .c");
+			expect(output).toContain("width: 100%");
+		});
+	});
+
+	describe("adjacent sibling combinator (+)", () => {
+		test("should handle single selector with +", () => {
+			const decl = postcss.decl({ prop: "margin", value: "0" });
+			const result = transformSelectorReduce(".a + .b", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should output as flat rule
+			expect(output).toContain(".a + .b");
+			expect(output).toContain("margin: 0");
+		});
+
+		test("should handle multiple selectors with +", () => {
+			const decl = postcss.decl({ prop: "padding", value: "10px" });
+			const result = transformSelectorReduce(".a + .b, .c + .d", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should group as flat selectors
+			expect(output).toContain(".a + .b, .c + .d");
+			expect(output).toContain("padding: 10px");
+		});
+	});
+
+	describe("general sibling combinator (~)", () => {
+		test("should handle single selector with ~", () => {
+			const decl = postcss.decl({ prop: "color", value: "blue" });
+			const result = transformSelectorReduce(".a ~ .b", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should output as flat rule
+			expect(output).toContain(".a ~ .b");
+			expect(output).toContain("color: blue");
+		});
+
+		test("should handle multiple selectors with ~", () => {
+			const decl = postcss.decl({ prop: "background", value: "white" });
+			const result = transformSelectorReduce(".a ~ .b, .c ~ .d", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should group as flat selectors
+			expect(output).toContain(".a ~ .b, .c ~ .d");
+			expect(output).toContain("background: white");
+		});
+	});
+
+	describe("mixed combinators", () => {
+		test("should handle > and + in same selector", () => {
+			const decl = postcss.decl({ prop: "opacity", value: "1" });
+			const result = transformSelectorReduce(".a > .b + .c", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// Should output as flat rule
+			expect(output).toContain(".a > .b + .c");
+			expect(output).toContain("opacity: 1");
+		});
+
+		test("should handle space combinator only (should nest)", () => {
+			const decl = postcss.decl({ prop: "color", value: "green" });
+			const result = transformSelectorReduce(".a .b", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Space combinator SHOULD nest
+			expect(scss).toContain(".a {");
+			expect(scss).toContain(".b {");
+			expect(scss).toContain("color: green");
+		});
+
+		test("should prefer LCP grouping with space combinators", () => {
+			const decl = postcss.decl({ prop: "width", value: "50%" });
+			const result = transformSelectorReduce(".container .a, .container .b", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Should nest under .container
+			expect(scss).toContain(".container {");
+			expect(scss).toContain(".a, .b");
+			expect(scss).toContain("width: 50%");
+		});
+
+		test("should not nest when LCP has non-space combinator", () => {
+			const decl = postcss.decl({ prop: "height", value: "auto" });
+			const result = transformSelectorReduce(".test > .a, .test > .b", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			// LCP contains >, so should output as flat
+			expect(output).toContain(".test > .a, .test > .b");
+			expect(output).toContain("height: auto");
+			// Should NOT nest
+			expect(output).not.toContain(".test {");
+		});
+	});
+});

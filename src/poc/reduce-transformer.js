@@ -3,12 +3,67 @@ import selectorParser from "postcss-selector-parser";
 import { SelectorTrie } from "./selector-trie.js";
 
 /**
+ * Check if the LCP path contains any non-space combinators (>, +, ~)
+ * These cannot be properly expressed in nested SCSS rules
+ * @param {string[]} path - LCP path array of trie keys
+ * @returns {boolean} True if path contains non-space combinators
+ */
+function hasNonSpaceCombinators(path) {
+	return path.some((key) => {
+		const { type, value } = SelectorTrie.parseKey(key);
+		return type === "combinator" && value !== " ";
+	});
+}
+
+/**
+ * Build flat output for selectors that cannot be nested
+ * (when LCP contains non-space combinators like >, +, ~)
+ * @param {{selector: string}[]} selectors - Selectors to output
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildFlatSelectors(selectors, declarations, root) {
+	const flatSelector = selectors.map((s) => s.selector).join(", ");
+	const flatRule = postcss.rule({ selector: flatSelector });
+	root.append(flatRule);
+
+	for (const decl of declarations) {
+		flatRule.append(decl.clone());
+	}
+}
+
+/**
  * Build nested rules for a single selector using the trie-based approach
  * @param {string} selector - CSS selector string
  * @param {import('postcss').Declaration[]} declarations - Declarations to add
  * @param {import('postcss').Root} root - PostCSS root to append to
  */
 function buildSingleSelector(selector, declarations, root) {
+	// First, check if the selector contains non-space combinators
+	// If so, output as a flat rule since these can't be properly nested
+	let hasNonSpaceCombinator = false;
+
+	selectorParser((selectors) => {
+		selectors.each((sel) => {
+			sel.each((node) => {
+				if (node.type === "combinator" && node.value !== " ") {
+					hasNonSpaceCombinator = true;
+				}
+			});
+		});
+	}).processSync(selector);
+
+	if (hasNonSpaceCombinator) {
+		// Output as flat rule
+		const rule = postcss.rule({ selector });
+		root.append(rule);
+		for (const decl of declarations) {
+			rule.append(decl.clone());
+		}
+		return;
+	}
+
+	// Original logic for space-combinator-only selectors
 	selectorParser((selectors) => {
 		selectors.each((sel) => {
 			let currentRule = null;
@@ -69,6 +124,14 @@ function buildLCPGroup(group, declarations, root) {
 		return;
 	}
 
+	// Phase 1: Check if LCP path contains non-space combinators
+	// These cannot be properly expressed in nested SCSS rules
+	if (path.length > 0 && hasNonSpaceCombinators(path)) {
+		// Output as flat selectors instead of nesting
+		buildFlatSelectors(selectors, declarations, root);
+		return;
+	}
+
 	// When path is empty, there's no common prefix
 	// Check if selectors have the same structure for aggressive grouping
 	if (path.length === 0) {
@@ -93,53 +156,65 @@ function buildLCPGroup(group, declarations, root) {
 				// Single selector, use simple path
 				buildSingleSelector(group[0].selector, declarations, root);
 			} else {
-				// Multiple selectors with same structure
-				// Extract first nodes and common structure
-				const firstNodes = group.map((s) => s.nodes[0].value);
+				// Phase 1: Check if template nodes contain non-space combinators
 				const templateNodes = group[0].nodes.slice(1);
+				const hasNonSpaceInTemplate = templateNodes.some(
+					(n) => n.type === "combinator" && n.value !== " ",
+				);
 
-				// Create parent rule with comma-separated first nodes
-				const parentRule = postcss.rule({ selector: firstNodes.join(", ") });
-				root.append(parentRule);
+				if (hasNonSpaceInTemplate) {
+					// Output as flat selectors since we can't nest non-space combinators
+					buildFlatSelectors(group, declarations, root);
+				} else {
+					// Multiple selectors with same structure
+					// Extract first nodes and common structure
+					const firstNodes = group.map((s) => s.nodes[0].value);
 
-				// Build nested structure from template nodes
-				let currentRule = parentRule;
-				for (let i = 0; i < templateNodes.length; i++) {
-					const node = templateNodes[i];
-					let ruleSelector;
+					// Create parent rule with comma-separated first nodes
+					const parentRule = postcss.rule({
+						selector: firstNodes.join(", "),
+					});
+					root.append(parentRule);
 
-					// Check if previous node was a space combinator
-					const prevNode = i > 0 ? templateNodes[i - 1] : null;
-					if (
-						prevNode &&
-						prevNode.type === "combinator" &&
-						prevNode.value === " "
-					) {
-						ruleSelector = node.value;
-					} else if (
-						i === 0 ||
-						(prevNode &&
+					// Build nested structure from template nodes
+					let currentRule = parentRule;
+					for (let i = 0; i < templateNodes.length; i++) {
+						const node = templateNodes[i];
+						let ruleSelector;
+
+						// Check if previous node was a space combinator
+						const prevNode = i > 0 ? templateNodes[i - 1] : null;
+						if (
+							prevNode &&
 							prevNode.type === "combinator" &&
-							prevNode.value === " ")
-					) {
-						// First node after parent, or after space combinator
-						if (node.type === "pseudo") {
-							ruleSelector = `&${node.value}`;
-						} else {
+							prevNode.value === " "
+						) {
 							ruleSelector = node.value;
+						} else if (
+							i === 0 ||
+							(prevNode &&
+								prevNode.type === "combinator" &&
+								prevNode.value === " ")
+						) {
+							// First node after parent, or after space combinator
+							if (node.type === "pseudo") {
+								ruleSelector = `&${node.value}`;
+							} else {
+								ruleSelector = node.value;
+							}
+						} else {
+							ruleSelector = `&${node.value}`;
 						}
-					} else {
-						ruleSelector = `&${node.value}`;
+
+						const newRule = postcss.rule({ selector: ruleSelector });
+						currentRule.append(newRule);
+						currentRule = newRule;
 					}
 
-					const newRule = postcss.rule({ selector: ruleSelector });
-					currentRule.append(newRule);
-					currentRule = newRule;
-				}
-
-				// Add declarations to leaf rule
-				for (const decl of declarations) {
-					currentRule.append(decl.clone());
+					// Add declarations to leaf rule
+					for (const decl of declarations) {
+						currentRule.append(decl.clone());
+					}
 				}
 			}
 		}
