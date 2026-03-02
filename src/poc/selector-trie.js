@@ -1,14 +1,58 @@
+/**
+ * @module selector-trie
+ *
+ * Trie data structure for finding Longest Common Prefix (LCP) of CSS selectors.
+ *
+ * This module provides a trie-based approach to selector grouping that enables
+ * efficient CSS-to-SCSS transformation with automatic nesting.
+ *
+ * ## Key Features:
+ * - Fast LCP finding using trie traversal
+ * - Memory-efficient storage (selectors only at terminal nodes)
+ * - Support for all CSS selector types (class, id, pseudo, combinators, etc.)
+ *
+ * ## Usage:
+ * ```javascript
+ * import { SelectorTrie } from './selector-trie.js';
+ *
+ * const trie = new SelectorTrie();
+ * trie.insert('.test .c');
+ * trie.insert('.test .d:hover');
+ *
+ * const lcp = trie.findLCP();
+ * const groups = trie.getGroups();
+ * ```
+ *
+ * @see {@link reduce-transformer.js} for usage in CSS-to-SCSS transformation
+ */
+
 import selectorParser from "postcss-selector-parser";
 
 /**
  * ASCII Unit Separator (0x1F) - safe delimiter for CSS selector values
  * This character is guaranteed not to appear in valid CSS selectors
  */
-const KEY_DELIMITER = "\x1F";
+export const KEY_DELIMITER = "\x1F";
 
 /**
- * Represents a CSS selector node in the trie
+ * CSS Combinator values
  */
+export const COMBINATORS = {
+	SPACE: " ",
+	CHILD: ">",
+	ADJACENT_SIBLING: "+",
+	GENERAL_SIBLING: "~",
+};
+
+/**
+ * CSS Selector prefixes
+ */
+export const PREFIXES = {
+	CLASS: ".",
+	ID: "#",
+	PSEUDO: ":",
+	UNIVERSAL: "*",
+};
 class SelectorTrieNode {
 	/**
 	 * @param {string|null} key - Unique key for this node (type:value)

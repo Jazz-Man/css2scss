@@ -1,9 +1,23 @@
-import postcss from "postcss";
-
 /**
- * Helper utilities for building SCSS rule selectors from parsed CSS nodes
- * Extracted to reduce duplication and improve testability
+ * @module selector-builder
+ *
+ * Helper utilities for building SCSS rule selectors from parsed CSS nodes.
+ *
+ * This module extracts common selector-building logic used across
+ * reduce-transformer.js and structure-grouper.js to reduce duplication
+ * and improve testability.
+ *
+ * ## Key Features:
+ * - Consistent ampersand (&) prefix handling
+ * - Nested rule generation from parsed nodes
+ * - Support for all CSS combinator types
+ *
+ * @see {@link reduce-transformer.js}
+ * @see {@link structure-grouper.js}
  */
+
+import postcss from "postcss";
+import { COMBINATORS } from "./selector-trie.js";
 
 /**
  * Parse a trie key to extract node type and value
@@ -30,7 +44,7 @@ export function needsAmpersand(node, prevNode, isFirst) {
 
 	// After space combinator, no ampersand needed (descendant selector)
 	const prevWasSpaceCombinator =
-		prevNode?.type === "combinator" && prevNode?.value === " ";
+		prevNode?.type === "combinator" && prevNode?.value === COMBINATORS.SPACE;
 	if (prevWasSpaceCombinator) {
 		return false;
 	}
@@ -58,7 +72,7 @@ export function buildRuleSelector(node, prevNode, isFirst) {
 
 	// After space combinator, use value directly (descendant)
 	const prevWasSpaceCombinator =
-		prevNode?.type === "combinator" && prevNode?.value === " ";
+		prevNode?.type === "combinator" && prevNode?.value === COMBINATORS.SPACE;
 	if (prevWasSpaceCombinator) {
 		return node.value;
 	}
@@ -85,7 +99,7 @@ export function buildFromNodes(nodes, root, declarations) {
 		const node = nodes[i];
 
 		// Skip space combinators - they're implicit in nesting
-		if (node.type === "combinator" && node.value === " ") {
+		if (node.type === "combinator" && node.value === COMBINATORS.SPACE) {
 			continue;
 		}
 
@@ -135,7 +149,7 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 		const node = templateNodes[i];
 
 		// Skip space combinators - they're implicit in nesting
-		if (node.type === "combinator" && node.value === " ") {
+		if (node.type === "combinator" && node.value === COMBINATORS.SPACE) {
 			continue;
 		}
 
@@ -148,7 +162,9 @@ export function buildFromTemplate(selectors, parentRule, declarations) {
 		// Determine if we need & prefix based on the first value
 		const prevNode = i > 0 ? templateNodes[i - 1] : null;
 		const needsAmpersandPrefix =
-			(!prevNode || prevNode.type !== "combinator" || prevNode.value !== " ") &&
+			(!prevNode ||
+				prevNode.type !== "combinator" ||
+				prevNode.value !== COMBINATORS.SPACE) &&
 			(leafValues[0].startsWith(":") ||
 				leafValues[0].startsWith(".") ||
 				leafValues[0].startsWith("#"));
@@ -191,7 +207,7 @@ export function buildFromPath(path, parseKey, root) {
 		const { type: nodeType, value } = parseKey(key);
 
 		// Skip space combinators - they're implicit in nesting
-		if (nodeType === "combinator" && value === " ") {
+		if (nodeType === "combinator" && value === COMBINATORS.SPACE) {
 			continue;
 		}
 

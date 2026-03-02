@@ -1,3 +1,33 @@
+/**
+ * @module reduce-transformer
+ *
+ * CSS to SCSS transformation using LCP-based selector grouping.
+ *
+ * This module transforms flat CSS selectors into nested SCSS rules using
+ * a trie-based Longest Common Prefix (LCP) algorithm. The transformation
+ * groups selectors by their common prefixes and generates optimized nested output.
+ *
+ * ## Transformation Strategy:
+ * 1. **LCP Grouping**: Find the longest common prefix among selectors
+ * 2. **Structure Grouping**: When no LCP exists, group by structural patterns
+ * 3. **Flat Output**: For non-space combinators (>, +, ~), output as flat selectors
+ *
+ * ## Example:
+ * ```javascript
+ * // Input: ".test .c, .test .d:hover { color: red; }"
+ * // Output:
+ * // .test {
+ * //   .c, .d {
+ * //     &:hover { color: red; }
+ * //   }
+ * // }
+ * ```
+ *
+ * @see {@link selector-trie.js}
+ * @see {@link structure-grouper.js}
+ * @see {@link selector-builder.js}
+ */
+
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import {
@@ -5,7 +35,7 @@ import {
 	buildFromPath,
 	buildSuffixSelectors,
 } from "./selector-builder.js";
-import { SelectorTrie } from "./selector-trie.js";
+import { COMBINATORS, SelectorTrie } from "./selector-trie.js";
 import { buildStructureGroup, groupByStructure } from "./structure-grouper.js";
 
 /**
@@ -17,7 +47,7 @@ import { buildStructureGroup, groupByStructure } from "./structure-grouper.js";
 function hasNonSpaceCombinators(path) {
 	return path.some((key) => {
 		const { type, value } = SelectorTrie.parseKey(key);
-		return type === "combinator" && value !== " ";
+		return type === "combinator" && value !== COMBINATORS.SPACE;
 	});
 }
 
@@ -57,7 +87,7 @@ function buildSingleSelector(selector, declarations, root) {
 					type: node.type,
 					value: node.toString(),
 				});
-				if (node.type === "combinator" && node.value !== " ") {
+				if (node.type === "combinator" && node.value !== COMBINATORS.SPACE) {
 					hasNonSpaceCombinator = true;
 				}
 			});
@@ -134,7 +164,7 @@ function buildLCPGroup(group, declarations, root) {
 	const lastPathNodeWasSpaceCombinator =
 		path.length > 0 &&
 		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
-		SelectorTrie.parseKey(path[path.length - 1]).value === " ";
+		SelectorTrie.parseKey(path[path.length - 1]).value === COMBINATORS.SPACE;
 
 	const leafSelector = buildSuffixSelectors(
 		selectors,

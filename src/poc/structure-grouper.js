@@ -1,10 +1,28 @@
+/**
+ * @module structure-grouper
+ *
+ * Module for grouping selectors by structural pattern.
+ *
+ * Used when there's no LCP (Longest Common Prefix) but selectors share
+ * similar structure, enabling aggressive nesting optimization.
+ *
+ * ## Strategy:
+ * - Build structure keys from node type patterns (e.g., "class|pseudo")
+ * - Group selectors with matching structures
+ * - Generate nested SCSS from grouped selectors
+ *
+ * ## Example:
+ * ```javascript
+ * // .a:hover, .b:focus → both have structure "class|pseudo"
+ * // Output: .a, .b { &:hover, &:focus { ... } }
+ * ```
+ *
+ * @see {@link reduce-transformer.js}
+ */
+
 import postcss from "postcss";
 import { buildFromTemplate } from "./selector-builder.js";
-
-/**
- * Module for grouping selectors by structural pattern
- * Used when there's no LCP (Longest Common Prefix) but selectors share similar structure
- */
+import { COMBINATORS } from "./selector-trie.js";
 
 /**
  * Check if a selector group contains non-space combinators
@@ -12,7 +30,9 @@ import { buildFromTemplate } from "./selector-builder.js";
  * @returns {boolean} True if contains non-space combinators
  */
 function hasNonSpaceCombinators(nodes) {
-	return nodes.some((n) => n.type === "combinator" && n.value !== " ");
+	return nodes.some(
+		(n) => n.type === "combinator" && n.value !== COMBINATORS.SPACE,
+	);
 }
 
 /**
