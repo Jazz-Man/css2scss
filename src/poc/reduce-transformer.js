@@ -331,6 +331,109 @@ export function transformRule(rule) {
 }
 
 /**
+ * Find or create an @media rule with the given params inside a parent rule
+ * @param {import('postcss').Rule} parentRule - The rule to nest @media inside
+ * @param {string} params - @media query params (e.g., "max-width: 768px")
+ * @returns {import('postcss').AtRule} The @media rule
+ */
+function findOrCreateMediaRule(parentRule, params) {
+	// Find existing @media with same params
+	for (const node of parentRule.nodes || []) {
+		if (
+			node.type === "atrule" &&
+			node.name === "media" &&
+			node.params === params
+		) {
+			return node;
+		}
+	}
+	// Create new @media rule
+	const mediaRule = postcss.atRule({ name: "media", params });
+	parentRule.append(mediaRule);
+	return mediaRule;
+}
+
+/**
+ * Sort rule nodes to ensure order: declarations → @media → child rules
+ * Also recursively sorts nested rules
+ * @param {import('postcss').Rule} rule - The rule to sort
+ */
+function sortRuleNodes(rule) {
+	const decls = [];
+	const atrules = [];
+	const childRules = [];
+
+	for (const node of rule.nodes || []) {
+		if (node.type === "decl") {
+			node.raws.semicolon = true;
+			decls.push(node);
+		} else if (node.type === "atrule" && node.name === "media") {
+			atrules.push(node);
+		} else if (node.type === "rule") {
+			childRules.push(node);
+			sortRuleNodes(node); // Recurse
+		} else {
+			decls.push(node); // Comments, etc. stay with declarations
+		}
+	}
+
+	rule.removeAll();
+	for (const node of [...decls, ...atrules, ...childRules]) {
+		rule.append(node);
+	}
+}
+
+/**
+ * Recursively find or create a rule with the given selector inside a parent
+ * @param {import('postcss').Container} parent - Parent container (Root or Rule)
+ * @param {string} selector - Selector to find or create
+ * @returns {import('postcss').Rule} The found or created rule
+ */
+function findOrCreateRule(parent, selector) {
+	// Find existing rule with same selector
+	for (const node of parent.nodes || []) {
+		if (node.type === "rule" && node.selector === selector) {
+			return node;
+		}
+	}
+	// Create new rule
+	const rule = postcss.rule({ selector });
+	parent.append(rule);
+	return rule;
+}
+
+/**
+ * Recursively merge transformed nodes into a parent container
+ * This ensures rules with the same selector path are merged together
+ * @param {import('postcss').Container} parent - Parent to merge into
+ * @param {import('postcss').Node[]} nodes - Nodes to merge
+ * @param {string|null} mediaParams - If set, wrap declarations in @media
+ */
+function mergeNodes(parent, nodes, mediaParams = null) {
+	for (const node of nodes) {
+		if (node.type === "decl") {
+			// Declaration - append directly (or inside @media if specified)
+			if (mediaParams) {
+				const mediaRule = findOrCreateMediaRule(parent, mediaParams);
+				mediaRule.append(node.clone());
+			} else {
+				parent.append(node.clone());
+			}
+		} else if (node.type === "rule") {
+			// Rule - find or create, then recursively merge children
+			const targetRule = findOrCreateRule(parent, node.selector);
+			mergeNodes(targetRule, node.nodes || [], mediaParams);
+		} else if (node.type === "atrule" && node.name === "media") {
+			// @media rule - merge children with media context
+			mergeNodes(parent, node.nodes || [], node.params);
+		} else {
+			// Other nodes (comments, etc.) - just append
+			parent.append(node.clone());
+		}
+	}
+}
+
+/**
  * Transforms a CSS string into nested SCSS
  * @param {string} css - CSS string to transform
  * @returns {string} SCSS string
@@ -339,10 +442,32 @@ export function transformCSS(css) {
 	const root = postcss.parse(css);
 	const output = postcss.root();
 
+	// Pass 1: Process non-media rules with merging
 	root.walkRules((rule) => {
+		// Skip rules inside @media or other at-rules
+		if (rule.parent.type === "atrule") {
+			return;
+		}
+
 		const transformed = transformRule(rule);
-		output.append(transformed.nodes);
+		mergeNodes(output, transformed.nodes);
 	});
+
+	// Pass 2: Process @media rules - merge with existing structure
+	root.walkAtRules(/media/, (atRule) => {
+		atRule.walkRules((rule) => {
+			const transformed = transformRule(rule);
+			// Merge with media context - will find existing rules and nest @media inside
+			mergeNodes(output, transformed.nodes, atRule.params);
+		});
+	});
+
+	// Sort all rules to ensure declarations → @media → child rules order
+	for (const node of output.nodes) {
+		if (node.type === "rule") {
+			sortRuleNodes(node);
+		}
+	}
 
 	return output.toString();
 }
