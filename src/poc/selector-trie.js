@@ -73,9 +73,10 @@ export class SelectorTrie {
 	/**
 	 * Insert a selector into the trie
 	 * @param {string} selector - CSS selector string
+	 * @param {Array<{type: string, value: string, raw: object}>|undefined} preParsedNodes - Optionally pre-parsed nodes to avoid re-parsing
 	 */
-	insert(selector) {
-		const nodes = SelectorTrie.parseSelector(selector);
+	insert(selector, preParsedNodes = undefined) {
+		const nodes = preParsedNodes ?? SelectorTrie.parseSelector(selector);
 		let current = this.root;
 
 		for (let i = 0; i < nodes.length; i++) {
@@ -89,11 +90,10 @@ export class SelectorTrie {
 			}
 
 			current = current.children.get(key);
-			// Track that a selector passes through this node
-			current.selectors.push({ selector, nodes });
 		}
 
-		// Mark this node as terminal (a complete selector ends here)
+		// Store selector ONLY at terminal node to reduce memory overhead
+		current.selectors.push({ selector, nodes });
 		current.isTerminal = true;
 		this.selectorCount++;
 	}

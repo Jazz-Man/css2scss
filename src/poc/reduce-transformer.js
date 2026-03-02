@@ -241,7 +241,9 @@ export function transformSelectorReduce(selectorString, options = {}) {
 	// Support both `declaration` (singular) and `declarations` (array) for backward compatibility
 	let declarations = options.declarations || options.declaration;
 	if (!declarations) {
-		declarations = [postcss.decl({ prop: "width", value: "378px" })];
+		throw new Error(
+			"transformSelectorReduce requires 'declarations' or 'declaration' option",
+		);
 	} else if (!Array.isArray(declarations)) {
 		declarations = [declarations];
 	}
@@ -251,7 +253,9 @@ export function transformSelectorReduce(selectorString, options = {}) {
 
 	selectorParser((selectors) => {
 		selectors.each((sel) => {
-			trie.insert(sel.toString().trim());
+			const selector = sel.toString().trim();
+			const nodes = SelectorTrie.parseSelector(selector);
+			trie.insert(selector, nodes);
 			return true;
 		});
 	}).processSync(selectorString);

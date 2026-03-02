@@ -131,8 +131,18 @@ describe("SelectorTrie.insert", () => {
 		const classChild = trie.root.children.get("class:.test");
 		expect(classChild).toBeDefined();
 
-		// Both selectors share the ".test" prefix
-		expect(classChild?.selectors).toHaveLength(2);
+		// After memory leak fix: selectors are only stored at terminal nodes
+		// The ".test" node is intermediate, so it has no selectors
+		expect(classChild?.selectors).toHaveLength(0);
+
+		// Terminal nodes (.c and :hover) have the selectors
+		const combChild = classChild?.children.get("combinator: ");
+		const cNode = combChild?.children.get("class:.c");
+		const dNode = combChild?.children.get("class:.d");
+		expect(cNode?.selectors).toHaveLength(1);
+		expect(dNode?.selectors).toHaveLength(0); // :hover is terminal for .d
+		const hoverNode = dNode?.children.get("pseudo::hover");
+		expect(hoverNode?.selectors).toHaveLength(1);
 	});
 
 	test("should mark terminal nodes correctly", () => {
