@@ -1,11 +1,15 @@
 import postcss from "postcss";
-import selectorParser from "postcss-selector-parser";
 
 import { transformSelectorReduce } from "./src/poc/reduce-transformer.js";
 
-import debug from "./src/utils/debug";
+const declarations = [
+	postcss.decl({ prop: "width", value: "100%" }),
+	postcss.decl({ prop: "height", value: "auto" }),
+	postcss.decl({ prop: "display", value: "block" }),
+];
 
-const result = transformSelectorReduce(".test, .item:hover, .link.active");
+const result = transformSelectorReduce(".c, .d:hover", {
+	declarations,
+});
 
 console.log(result.toString());
-// console.log(newRoot.toString());
