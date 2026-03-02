@@ -1,6 +1,6 @@
 import postcss from "postcss";
 
-import { transformSelectorReduce } from "./src/poc/reduce-transformer.js";
+import { transformSelectorReduce } from "./src/core/transformer";
 
 const declarations = [
 	postcss.decl({ prop: "width", value: "100%" }),
