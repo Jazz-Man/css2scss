@@ -1,499 +1,473 @@
+/**
+ * @module transformer
+ *
+ * CSS to SCSS transformation using LCP-based selector grouping.
+ *
+ * This module transforms flat CSS selectors into nested SCSS rules using
+ * a trie-based Longest Common Prefix (LCP) algorithm. The transformation
+ * groups selectors by their common prefixes and generates optimized nested output.
+ *
+ * ## Transformation Strategy:
+ * 1. **LCP Grouping**: Find the longest common prefix among selectors
+ * 2. **Structure Grouping**: When no LCP exists, group by structural patterns
+ * 3. **Flat Output**: For non-space combinators (>, +, ~), output as flat selectors
+ *
+ * ## Example:
+ * ```javascript
+ * // Input: ".test .c, .test .d:hover { color: red; }"
+ * // Output:
+ * // .test {
+ * //   .c, .d {
+ * //     &:hover { color: red; }
+ * //   }
+ * // }
+ * ```
+ *
+ * @see {@link selector-trie.js}
+ * @see {@link structure-grouper.js}
+ * @see {@link selector-builder.js}
+ */
+
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
+import {
+	buildFromNodes,
+	buildFromPath,
+	buildSuffixSelectors,
+} from "./selector-builder.js";
+import { COMBINATORS, SelectorTrie } from "./selector-trie.js";
+import { buildStructureGroup, groupByStructure } from "./structure-grouper.js";
 
 /**
- * Finds an existing rule at the given path or creates a new one.
- * Traverses the AST hierarchy, creating nested rules as needed.
- *
- * @param {import('postcss').Root | import('postcss').Rule} root - The root or rule to search in
- * @param {string[]} path - Array of selector strings representing the nesting path
- * @returns {import('postcss').Rule} The found or created rule at the end of the path
- *
- * @example
- * // Finds or creates .a > .b path
- * const rule = findOrCreateRuleAtPath(root, [".a", ">"]);
+ * Check if the LCP path contains any non-space combinators (>, +, ~)
+ * These cannot be properly expressed in nested SCSS rules
+ * @param {string[]} path - LCP path array of trie keys
+ * @returns {boolean} True if path contains non-space combinators
  */
-function findOrCreateRuleAtPath(root, path) {
-	let current = root;
+function hasNonSpaceCombinators(path) {
+	return path.some((key) => {
+		const { type, value } = SelectorTrie.parseKey(key);
+		return type === "combinator" && value !== COMBINATORS.SPACE;
+	});
+}
 
-	for (const selector of path) {
-		let found = null;
-		for (const node of current.nodes) {
-			if (node.type === "rule" && node.selector === selector) {
-				found = node;
-				break;
+/**
+ * Build flat output for selectors that cannot be nested
+ * (when LCP contains non-space combinators like >, +, ~)
+ * @param {{selector: string}[]} selectors - Selectors to output
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildFlatSelectors(selectors, declarations, root) {
+	const flatSelector = selectors.map((s) => s.selector).join(", ");
+	const flatRule = postcss.rule({ selector: flatSelector });
+	root.append(flatRule);
+
+	for (const decl of declarations) {
+		flatRule.append(decl.clone());
+	}
+}
+
+/**
+ * Build nested rules for a single selector using the trie-based approach
+ * @param {string} selector - CSS selector string
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildSingleSelector(selector, declarations, root) {
+	// First, check if the selector contains non-space combinators
+	// If so, output as a flat rule since these can't be properly nested
+	let hasNonSpaceCombinator = false;
+	const nodes = [];
+
+	selectorParser((selectors) => {
+		selectors.each((sel) => {
+			sel.each((node) => {
+				nodes.push({
+					type: node.type,
+					value: node.toString(),
+				});
+				if (node.type === "combinator" && node.value !== COMBINATORS.SPACE) {
+					hasNonSpaceCombinator = true;
+				}
+			});
+		});
+	}).processSync(selector);
+
+	if (hasNonSpaceCombinator) {
+		// Output as flat rule
+		const rule = postcss.rule({ selector });
+		root.append(rule);
+		for (const decl of declarations) {
+			rule.append(decl.clone());
+		}
+		return;
+	}
+
+	// Use buildFromNodes helper for space-combinator-only selectors
+	buildFromNodes(nodes, root, declarations);
+}
+
+/**
+ * @typedef {object} GroupingStrategy
+ * @property {(group: object) => boolean} canHandle - Check if strategy applies
+ * @property {(group: object, declarations: import('postcss').Declaration[], root: import('postcss').Root) => void} build - Build output
+ */
+
+// ============================================================================
+// Strategy 1: Single Selector
+// ============================================================================
+
+/**
+ * Check if single selector strategy applies
+ * @param {{selectors: Array}} group - Selector group
+ * @returns {boolean} True if only one selector
+ */
+function canHandleSingle(group) {
+	return group.selectors.length === 1;
+}
+
+/**
+ * Build output for a single selector
+ * @param {{selectors: Array}} group - Selector group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildSingle(group, declarations, root) {
+	buildSingleSelector(group.selectors[0].selector, declarations, root);
+}
+
+// ============================================================================
+// Strategy 2: Non-Space Combinators (Flat Output)
+// ============================================================================
+
+/**
+ * Check if flat output strategy applies (non-space combinators in path)
+ * @param {{path: string[]}} group - Selector group with LCP path
+ * @returns {boolean} True if path contains non-space combinators
+ */
+function canHandleFlat(group) {
+	return group.path.length > 0 && hasNonSpaceCombinators(group.path);
+}
+
+/**
+ * Build flat output for selectors with non-space combinators
+ * @param {{selectors: Array}} group - Selector group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildFlat(group, declarations, root) {
+	buildFlatSelectors(group.selectors, declarations, root);
+}
+
+// ============================================================================
+// Strategy 3: Structure Grouping (No LCP)
+// ============================================================================
+
+/**
+ * Check if structure grouping applies (empty LCP path)
+ * @param {{path: string[]}} group - Selector group
+ * @returns {boolean} True if path is empty
+ */
+function canHandleStructure(group) {
+	return group.path.length === 0;
+}
+
+/**
+ * Build output using structure-based grouping
+ * @param {{selectors: Array}} group - Selector group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildStructure(group, declarations, root) {
+	const structureGroups = groupByStructure(group.selectors);
+
+	for (const subgroup of structureGroups.values()) {
+		if (subgroup.length === 1) {
+			buildSingleSelector(subgroup[0].selector, declarations, root);
+		} else {
+			const grouped = buildStructureGroup(subgroup, declarations, root);
+			if (!grouped) {
+				buildFlatSelectors(subgroup, declarations, root);
 			}
 		}
-
-		if (!found) {
-			found = postcss.rule({ selector });
-			current.append(found);
-		}
-
-		current = found;
 	}
+}
 
-	return current;
+// ============================================================================
+// Strategy 4: LCP Grouping (Default)
+// ============================================================================
+
+/**
+ * LCP strategy always applies as fallback
+ * @returns {boolean} Always true
+ */
+function canHandleLCP() {
+	return true;
 }
 
 /**
- * Extracts all AST nodes from a CSS selector string.
- * Uses postcss-selector-parser to parse and iterate over direct children only.
- *
- * @param {string} selectorStr - The CSS selector string to parse
- * @returns {import('postcss-selector-parser').Node[]} Array of parsed selector nodes
- *
- * @example
- * getNodes(".a:hover") // Returns [class"a", pseudo":hover"]
+ * Build nested output using LCP path
+ * @param {{selectors: Array, path: string[]}} group - Selector group with LCP
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
  */
-function getNodes(selectorStr) {
-	const nodes = [];
-	selectorParser((selectors) => {
-		selectors.at(0).each((node) => nodes.push(node));
-	}).processSync(selectorStr);
-	return nodes;
+function buildLCP(group, declarations, root) {
+	const { selectors, path } = group;
+
+	const currentRule = buildFromPath(path, SelectorTrie.parseKey, root);
+
+	const lastPathNodeWasSpaceCombinator =
+		path.length > 0 &&
+		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
+		SelectorTrie.parseKey(path[path.length - 1]).value === COMBINATORS.SPACE;
+
+	const leafSelector = buildSuffixSelectors(
+		selectors,
+		path.length,
+		lastPathNodeWasSpaceCombinator,
+	);
+
+	if (currentRule) {
+		const leafRule = postcss.rule({ selector: leafSelector });
+		currentRule.append(leafRule);
+
+		for (const decl of declarations) {
+			leafRule.append(decl.clone());
+		}
+	}
+}
+
+// ============================================================================
+// Strategy Dispatcher
+// ============================================================================
+
+/**
+ * Grouping strategies in priority order
+ * @type {GroupingStrategy[]}
+ */
+const strategies = [
+	{ canHandle: canHandleSingle, build: buildSingle },
+	{ canHandle: canHandleFlat, build: buildFlat },
+	{ canHandle: canHandleStructure, build: buildStructure },
+	{ canHandle: canHandleLCP, build: buildLCP },
+];
+
+/**
+ * Build nested rules for a group of selectors with common LCP
+ * Dispatches to appropriate strategy based on group characteristics
+ * @param {{selectors: Array<{selector: string, nodes: Array}>, lcpNode: import('./selector-trie.js').SelectorTrieNode, path: string[]}} group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildLCPGroup(group, declarations, root) {
+	for (const strategy of strategies) {
+		if (strategy.canHandle(group)) {
+			strategy.build(group, declarations, root);
+			return;
+		}
+	}
 }
 
 /**
- * Converts an array of parsed selector nodes back to a CSS selector string.
- *
- * @param {import('postcss-selector-parser').Node[]} nodes - Array of selector nodes
- * @returns {string} The concatenated selector string
- *
- * @example
- * nodesToSelector([class"a", pseudo":hover"]) // Returns ".a:hover"
+ * Transforms a CSS selector string into nested SCSS rules using LCP trie approach
+ * @param {string} selectorString - CSS selector (e.g., ".a.b, .c:hover")
+ * @param {object} options - Options
+ * @param {import('postcss').Declaration|import('postcss').Declaration[]} options.declarations - Declaration(s) to add to leaf rules (single or array)
+ * @returns {import('postcss').Root} PostCSS Root with nested rules
  */
-function nodesToSelector(nodes) {
-	return nodes.map((n) => n.toString()).join("");
-}
+export function transformSelectorReduce(selectorString, options = {}) {
+	const newRoot = postcss.root();
 
-/**
- * Splits a CSS selector by descendant space combinators using the parser API.
- * Preserves other combinators (>, +, ~) within each part.
- *
- * @param {string} selectorStr - The CSS selector string to split
- * @returns {string[]} Array of selector parts split by spaces
- *
- * @example
- * splitBySpace(".a .b > .c") // Returns [".a", ".b > .c"]
- */
-function splitBySpace(selectorStr) {
-	const parts = [];
-	selectorParser((selectors) => {
-		const sel = selectors.at(0);
-		if (!sel) return;
-
-		const groups = sel.split(
-			(node) => node.type === "combinator" && node.value === " ",
+	// Validate selector string
+	if (!selectorString || selectorString.trim().length === 0) {
+		throw new Error(
+			"transformSelectorReduce requires a non-empty selector string",
 		);
+	}
 
-		parts.push(
-			...groups.map((g) =>
-				g
-					.map((n) => n.toString())
-					.join("")
-					.trim(),
-			),
+	// Support both `declaration` (singular) and `declarations` (array) for backward compatibility
+	let declarations = options.declarations || options.declaration;
+	if (!declarations) {
+		throw new Error(
+			"transformSelectorReduce requires 'declarations' or 'declaration' option",
 		);
-	}).processSync(selectorStr);
+	} else if (!Array.isArray(declarations)) {
+		declarations = [declarations];
+	}
 
-	return parts;
+	// Build trie from comma-separated selectors
+	const trie = new SelectorTrie();
+
+	selectorParser((selectors) => {
+		selectors.each((sel) => {
+			const selector = sel.toString().trim();
+			const nodes = SelectorTrie.parseSelector(selector);
+			trie.insert(selector, nodes);
+			return true;
+		});
+	}).processSync(selectorString);
+
+	// Get groups by LCP
+	const groups = trie.getGroups();
+
+	// Generate nested output for each group
+	for (const group of groups.values()) {
+		buildLCPGroup(group, declarations, newRoot);
+	}
+
+	return newRoot;
 }
 
 /**
- * Splits selector nodes into base and child parts for nesting purposes.
- * The base consists of tag/class/id nodes before the first pseudo-class.
- * Child parts include pseudo-classes and everything after them.
- *
- * Special case: `:root` is treated as a standalone selector, not a modifier.
- *
- * @param {import('postcss-selector-parser').Node[]} nodes - Array of selector nodes
- * @returns {{base: import('postcss-selector-parser').Node[], child: import('postcss-selector-parser').Node[] | null}} Object with base and child arrays
- *
- * @example
- * splitBaseChild([class"a", pseudo":hover"]) // Returns { base: [class"a"], child: [pseudo":hover"] }
- * splitBaseChild([pseudo":root"]) // Returns { base: [pseudo":root"], child: null }
+ * Transforms a PostCSS Rule into nested SCSS rules
+ * @param {import('postcss').Rule} rule - PostCSS Rule with selector and declarations
+ * @returns {import('postcss').Root} PostCSS Root with nested rules
  */
-function splitBaseChild(nodes) {
-	// Special case: :root is a standalone selector
-	if (
-		nodes.length === 1 &&
-		nodes[0].type === "pseudo" &&
-		nodes[0].value === ":root"
-	) {
-		return { base: nodes, child: null };
-	}
-
-	let splitIdx = -1;
-	for (let i = 0; i < nodes.length; i++) {
-		if (nodes[i].type === "pseudo") {
-			splitIdx = i;
-			break;
-		}
-	}
-
-	if (splitIdx === -1) {
-		return { base: nodes, child: null };
-	}
-
-	return {
-		base: nodes.slice(0, splitIdx),
-		child: nodes.slice(splitIdx),
-	};
+export function transformRule(rule) {
+	return transformSelectorReduce(rule.selector, {
+		declarations: [...rule.nodes],
+	});
 }
 
 /**
- * Parses a CSS selector into a nesting path for SCSS transformation.
- * Uses an AST-based approach without regex to determine base selectors
- * and child modifiers (pseudo-classes, chained classes).
- *
- * @param {string} selectorStr - The CSS selector string to parse
- * @returns {{basePath: string[], childSelector: string | null}} Object with basePath array and optional child selector
- *
- * @example
- * parseSelectorPath(".a:hover") // Returns { basePath: [".a"], childSelector: "&:hover" }
- * parseSelectorPath(".a.b .c") // Returns { basePath: [".a", "&.b"], childSelector: ".c" }
- * parseSelectorPath(".a.b .c.d") // Returns { basePath: [".a", "&.b", ".c", "&.d"], childSelector: null }
- * parseSelectorPath(".a:hover .b") // Returns { basePath: [".a"], childSelector: "&:hover .b" }
- * parseSelectorPath(":root") // Returns { basePath: [":root"], childSelector: null }
+ * Find or create an @media rule with the given params inside a parent rule
+ * @param {import('postcss').Rule} parentRule - The rule to nest @media inside
+ * @param {string} params - @media query params (e.g., "max-width: 768px")
+ * @returns {import('postcss').AtRule} The @media rule
  */
-function parseSelectorPath(selectorStr) {
-	const parts = splitBySpace(selectorStr);
-
-	if (parts.length === 0) {
-		return { basePath: [selectorStr], childSelector: null };
-	}
-
-	if (parts.length === 1) {
-		const nodes = getNodes(parts[0]);
-		const { base, child } = splitBaseChild(nodes);
-		const basePath = nodesToSelector(base);
-
-		if (!basePath) {
-			return { basePath: [parts[0]], childSelector: null };
-		}
-
-		if (child && child.length > 0) {
-			return {
-				basePath: [basePath],
-				childSelector: `&${nodesToSelector(child)}`,
-			};
-		}
-
-		return { basePath: [basePath], childSelector: null };
-	}
-
-	// Multiple parts: build nested path
-	const path = [];
-
-	// Process first part: split into individual nodes
-	const firstPartNodes = getNodes(parts[0]);
-	if (firstPartNodes.length === 0) {
-		return { basePath: [selectorStr], childSelector: null };
-	}
-
-	// First element of first part becomes the base
-	path.push(firstPartNodes[0].toString());
-
-	// Remaining nodes in first part (chained classes/ids/pseudo) become nested levels
-	let pseudoInFirst = null;
-	for (let i = 1; i < firstPartNodes.length; i++) {
-		const node = firstPartNodes[i];
-		if (node.type === "pseudo") {
-			// Remember pseudo for childSelector
-			pseudoInFirst = `&${node.toString()}`;
-			break;
-		}
-		// Chained class/id becomes nested level
-		path.push(`&${node.toString()}`);
-	}
-
-	// Process middle parts (all except first and last)
-	for (let i = 1; i < parts.length - 1; i++) {
-		const part = parts[i];
-		const partNodes = getNodes(part);
-
-		if (partNodes.length === 0) continue;
-
-		// First node of this part
-		path.push(partNodes[0].toString());
-
-		// Chained classes/ids in this part
-		for (let j = 1; j < partNodes.length; j++) {
-			const node = partNodes[j];
-			if (node.type === "pseudo") break;
-			path.push(`&${node.toString()}`);
+function findOrCreateMediaRule(parentRule, params) {
+	// Find existing @media with same params
+	for (const node of parentRule.nodes || []) {
+		if (
+			node.type === "atrule" &&
+			node.name === "media" &&
+			node.params === params
+		) {
+			return node;
 		}
 	}
-
-	// Build childSelector from pseudo in first part + last part
-	const childParts = [];
-
-	if (pseudoInFirst) {
-		childParts.push(pseudoInFirst);
-	}
-
-	// Add last part
-	if (parts.length > 1) {
-		childParts.push(parts[parts.length - 1]);
-	}
-
-	if (childParts.length === 0) {
-		return { basePath: path, childSelector: null };
-	}
-
-	const childSelector = childParts.join(" ");
-
-	return { basePath: path, childSelector };
+	// Create new @media rule
+	const mediaRule = postcss.atRule({ name: "media", params });
+	parentRule.append(mediaRule);
+	return mediaRule;
 }
 
 /**
- * Sorts nodes within a rule according to SCSS conventions.
- * Order: declarations → @media at-rules → child rules
- * Recursively sorts nested rules. Also ensures all declarations have semicolons.
- *
+ * Sort rule nodes to ensure order: declarations → @media → child rules
+ * Also recursively sorts nested rules
  * @param {import('postcss').Rule} rule - The rule to sort
- * @returns {void}
- *
- * @example
- * // Before: [rule, decl, atrule, decl]
- * sortRuleNodes(rule);
- * // After: [decl, decl, atrule, rule]
  */
 function sortRuleNodes(rule) {
 	const decls = [];
 	const atrules = [];
 	const childRules = [];
 
-	for (const node of rule.nodes) {
+	for (const node of rule.nodes || []) {
 		if (node.type === "decl") {
-			// Ensure semicolon on all declarations
 			node.raws.semicolon = true;
 			decls.push(node);
 		} else if (node.type === "atrule" && node.name === "media") {
 			atrules.push(node);
 		} else if (node.type === "rule") {
 			childRules.push(node);
-			// Recursively sort child rules
-			sortRuleNodes(node);
+			sortRuleNodes(node); // Recurse
 		} else {
-			// Keep other nodes as is (comments, etc.)
-			decls.push(node);
+			decls.push(node); // Comments, etc. stay with declarations
 		}
 	}
 
 	rule.removeAll();
-
-	for (const node of decls) {
-		rule.append(node);
-	}
-
-	for (const node of atrules) {
-		rule.append(node);
-	}
-
-	for (const node of childRules) {
+	for (const node of [...decls, ...atrules, ...childRules]) {
 		rule.append(node);
 	}
 }
 
 /**
- * Creates a signature string for declarations to compare equality.
- *
- * @param {Array<{prop: string, value: string, important: boolean}>} declarations - Array of declarations
- * @returns {string} A unique signature string for the declarations
+ * Recursively find or create a rule with the given selector inside a parent
+ * @param {import('postcss').Container} parent - Parent container (Root or Rule)
+ * @param {string} selector - Selector to find or create
+ * @returns {import('postcss').Rule} The found or created rule
  */
-function declarationsSignature(declarations) {
-	return declarations
-		.map((d) => `${d.prop}:${d.value}:${d.important ? "important" : ""}`)
-		.join("|");
-}
-
-/**
- * Applies nesting transformation to a CSS AST.
- * Converts flat CSS rules into nested SCSS structure using postcss-selector-parser.
- * Preserves at-rules (@keyframes, @supports, @font-face) and handles @media queries.
- * Merges comma-separated selectors with identical declarations into single rules.
- *
- * @param {import('postcss').Root} root - The PostCSS Root node to transform
- * @param {{comments: boolean}} options - Transformation options
- * @param {boolean} [options.comments=true] - Whether to preserve comments in output
- * @returns {import('postcss').Root} The transformed root with nested SCSS structure
- *
- * @example
- * const result = transform(cssRoot, { comments: true });
- */
-export function transform(root, options = {}) {
-	const { comments = true } = options;
-
-	if (!comments) {
-		root.walkComments((comment) => comment.remove());
-	}
-
-	const newRoot = postcss.root();
-
-	// First, preserve all at-rules that are NOT @media (@keyframes, @supports, @font-face, etc.)
-	root.walkAtRules((atRule) => {
-		if (atRule.parent.type === "root" && atRule.name !== "media") {
-			newRoot.append(atRule.clone());
+function findOrCreateRule(parent, selector) {
+	// Find existing rule with same selector
+	for (const node of parent.nodes || []) {
+		if (node.type === "rule" && node.selector === selector) {
+			return node;
 		}
-	});
+	}
+	// Create new rule
+	const rule = postcss.rule({ selector });
+	parent.append(rule);
+	return rule;
+}
 
-	// Group selectors by (basePath, declarations, mediaParams)
-	// Key format: "basePath.join('|')|declSig|mediaParams|null"
-	/** @type {Map<string, {basePath: string[], declarations: import('postcss').Declaration[], mediaParams: string | null}>} */
-	const selectorGroups = new Map();
+/**
+ * Recursively merge transformed nodes into a parent container
+ * This ensures rules with the same selector path are merged together
+ * @param {import('postcss').Container} parent - Parent to merge into
+ * @param {import('postcss').Node[]} nodes - Nodes to merge
+ * @param {string|null} mediaParams - If set, wrap declarations in @media
+ */
+function mergeNodes(parent, nodes, mediaParams = null) {
+	for (const node of nodes) {
+		if (node.type === "decl") {
+			// Declaration - append directly (or inside @media if specified)
+			if (mediaParams) {
+				const mediaRule = findOrCreateMediaRule(parent, mediaParams);
+				mediaRule.append(node.clone());
+			} else {
+				parent.append(node.clone());
+			}
+		} else if (node.type === "rule") {
+			// Rule - find or create, then recursively merge children
+			const targetRule = findOrCreateRule(parent, node.selector);
+			mergeNodes(targetRule, node.nodes || [], mediaParams);
+		} else if (node.type === "atrule" && node.name === "media") {
+			// @media rule - merge children with media context
+			mergeNodes(parent, node.nodes || [], node.params);
+		} else {
+			// Other nodes (comments, etc.) - just append
+			parent.append(node.clone());
+		}
+	}
+}
 
-	// Process all rules to build groups
+/**
+ * Transforms a CSS string into nested SCSS
+ * @param {string} css - CSS string to transform
+ * @returns {string} SCSS string
+ */
+export function transformCSS(css) {
+	const root = postcss.parse(css);
+	const output = postcss.root();
+
+	// Pass 1: Process non-media rules with merging
 	root.walkRules((rule) => {
-		// Skip rules that are inside @keyframes, @font-face, etc.
-		if (rule.parent.type === "atrule" && rule.parent.name !== "media") {
+		// Skip rules inside @media or other at-rules
+		if (rule.parent.type === "atrule") {
 			return;
 		}
 
-		const isInMedia =
-			rule.parent.type === "atrule" && rule.parent.name === "media";
-		const mediaParams = isInMedia ? rule.parent.params : null;
-
-		// Collect declarations once
-		/** @type {import('postcss').Declaration[]} */
-		const declarations = [];
-		rule.walkDecls((decl) => {
-			declarations.push(decl.clone());
-		});
-
-		const declSig = declarationsSignature(declarations);
-
-		// Handle comma-separated selectors
-		const selectors = rule.selector.split(/,\s*/).filter((s) => s.trim());
-
-		for (const selector of selectors) {
-			const { basePath, childSelector } = parseSelectorPath(selector);
-
-			const groupKey = `${basePath.join("|")}|${declSig}|${mediaParams || "null"}`;
-
-			if (!selectorGroups.has(groupKey)) {
-				selectorGroups.set(groupKey, {
-					basePath,
-					childSelectors: [],
-					declarations,
-					mediaParams,
-				});
-			}
-
-			const group = selectorGroups.get(groupKey);
-			if (childSelector) {
-				group.childSelectors.push(childSelector);
-			}
-		}
+		const transformed = transformRule(rule);
+		mergeNodes(output, transformed.nodes);
 	});
 
-	// Now create the actual rules from groups
-	for (const group of selectorGroups.values()) {
-		const { basePath, childSelectors, declarations, mediaParams } = group;
+	// Pass 2: Process @media rules - merge with existing structure
+	root.walkAtRules(/media/, (atRule) => {
+		atRule.walkRules((rule) => {
+			const transformed = transformRule(rule);
+			// Merge with media context - will find existing rules and nest @media inside
+			mergeNodes(output, transformed.nodes, atRule.params);
+		});
+	});
 
-		// Find or create the base rule
-		const baseRule = findOrCreateRuleAtPath(newRoot, basePath);
-
-		if (childSelectors.length === 0) {
-			// No child selector, add declarations directly to base rule
-			if (mediaParams) {
-				let mediaRule = null;
-				if (baseRule.nodes) {
-					for (const node of baseRule.nodes) {
-						if (
-							node.type === "atrule" &&
-							node.name === "media" &&
-							node.params === mediaParams
-						) {
-							mediaRule = node;
-							break;
-						}
-					}
-				}
-				if (!mediaRule) {
-					mediaRule = postcss.atRule({
-						name: "media",
-						params: mediaParams,
-					});
-					baseRule.append(mediaRule);
-				}
-				for (const decl of declarations) {
-					const newDecl = postcss.decl(decl);
-					newDecl.raws.semicolon = true;
-					mediaRule.prepend(newDecl);
-				}
-			} else {
-				for (const decl of declarations) {
-					const newDecl = postcss.decl(decl);
-					newDecl.raws.semicolon = true;
-					baseRule.prepend(newDecl);
-				}
-			}
-		} else {
-			// Has child selectors - create one child rule with comma-separated selectors
-			const childSelectorStr = childSelectors.join(",\n\t");
-
-			let targetRule;
-			if (mediaParams) {
-				// Find or create @media rule in base
-				let mediaRule = null;
-				if (baseRule.nodes) {
-					for (const node of baseRule.nodes) {
-						if (
-							node.type === "atrule" &&
-							node.name === "media" &&
-							node.params === mediaParams
-						) {
-							mediaRule = node;
-							break;
-						}
-					}
-				}
-				if (!mediaRule) {
-					mediaRule = postcss.atRule({
-						name: "media",
-						params: mediaParams,
-					});
-					baseRule.append(mediaRule);
-				}
-				targetRule = mediaRule;
-			} else {
-				targetRule = baseRule;
-			}
-
-			// Find existing child rule with same selector
-			let childRule = null;
-			if (targetRule.nodes) {
-				for (const node of targetRule.nodes) {
-					if (node.type === "rule" && node.selector === childSelectorStr) {
-						childRule = node;
-						break;
-					}
-				}
-			}
-
-			if (!childRule) {
-				childRule = postcss.rule({ selector: childSelectorStr });
-				targetRule.append(childRule);
-			}
-
-			// Add declarations to child rule
-			for (const decl of declarations) {
-				const newDecl = postcss.decl(decl);
-				newDecl.raws.semicolon = true;
-				childRule.prepend(newDecl);
-			}
+	// Sort all rules to ensure declarations → @media → child rules order
+	for (const node of output.nodes) {
+		if (node.type === "rule") {
+			sortRuleNodes(node);
 		}
 	}
 
-	// Sort all nodes in correct order: decl -> @media -> rule
-	newRoot.walkRules((rule) => {
-		sortRuleNodes(rule);
-	});
-
-	// Ensure proper SCSS output format
-	newRoot.raws.semicolon = true;
-
-	return newRoot;
+	return output.toString();
 }

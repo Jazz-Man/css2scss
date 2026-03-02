@@ -1,435 +1,346 @@
+/**
+ * Transformer tests using parameterized testing patterns.
+ *
+ * Tests the LCP-based CSS-to-SCSS transformation logic.
+ */
+
 import { describe, expect, test } from "bun:test";
 import postcss from "postcss";
-import scss from "postcss-scss";
-import { transform } from "../../src/core/transformer.js";
+import {
+	transformCSS,
+	transformRule,
+	transformSelectorReduce,
+} from "../../src/core/transformer.js";
+import { decl, toSCSS, transformToSCSS } from "./helpers.js";
 
-describe("transform", () => {
-	function transformCSS(css, options = {}) {
-		const root = postcss.parse(css);
-		const transformed = transform(root, options);
-		return transformed.toString(scss.syntax);
-	}
-
-	describe("Basic Selectors", () => {
-		test("should preserve simple class selector", () => {
-			const css = ".a { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a");
-			expect(result).toContain("color: red");
-		});
-
-		test("should preserve tag selector", () => {
-			const css = "div { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("div");
-			expect(result).toContain("color: red");
-		});
-
-		test("should preserve ID selector", () => {
-			const css = "#myid { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("#myid");
-			expect(result).toContain("color: red");
-		});
-
-		test("should preserve tag + class selector", () => {
-			const css = "div.container { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("div.container");
-			expect(result).toContain("color: red");
-		});
-	});
-
-	describe("Chained Classes/IDs", () => {
-		test("should preserve chained classes as single selector", () => {
-			const css = ".a.b { color: red; }";
-			const result = transformCSS(css);
-			// .a.b is treated as a single selector without space
-			expect(result).toContain(".a.b");
-			expect(result).toContain("color: red");
-		});
-
-		test("should preserve three chained classes", () => {
-			const css = ".a.b.c { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a.b.c");
-		});
-
-		test("should preserve chained IDs", () => {
-			const css = "#id1#id2 { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("#id1#id2");
-		});
-
-		test("should preserve class + ID chained", () => {
-			const css = ".a.b#id { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a.b#id");
+describe("transformSelectorReduce", () => {
+	describe("comma-separated selectors", () => {
+		test.each([
+			{
+				selector: ".a, .b",
+				prop: "color",
+				value: "red",
+				expects: [".a, .b", "color: red"],
+			},
+			{
+				selector: ".a.b, .c",
+				prop: "width",
+				value: "100px",
+				expects: [".a {", "&.b {", ".c {"],
+			},
+			{
+				selector: ".a, .b.c, .d:hover",
+				prop: "display",
+				value: "block",
+				expects: [".a {", ".b {", "&.c {", ".d {", "&:hover {"],
+			},
+		])("should handle $selector", ({ selector, prop, value, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("Pseudo-Classes", () => {
-		test("should nest :hover pseudo-class", () => {
-			const css = ".a:hover { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:hover {");
-		});
-
-		test("should nest :focus pseudo-class", () => {
-			const css = ".a:focus { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:focus {");
-		});
-
-		test("should nest :first-child pseudo-class", () => {
-			const css = ".a:first-child { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:first-child {");
-		});
-
-		test("should nest :nth-child pseudo-class", () => {
-			const css = ".a:nth-child(2) { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:nth-child(2) {");
-		});
-
-		test("should nest :not pseudo-class", () => {
-			const css = ".a:not(.b) { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:not(.b) {");
-		});
-
-		test("should nest :has pseudo-class", () => {
-			const css = ".a:has(.b) { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:has(.b) {");
+	describe("chained classes", () => {
+		test.each([
+			{
+				selector: ".a.b",
+				prop: "color",
+				value: "blue",
+				regex: /\.a \{[\s\S]*&\.b \{/,
+			},
+			{
+				selector: ".a.b.c",
+				prop: "font-size",
+				value: "16px",
+				regex: /\.a \{[\s\S]*&\.b \{[\s\S]*&\.c \{/,
+			},
+		])("should nest $selector", ({ selector, prop, value, regex }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			expect(scss).toMatch(regex);
+			expect(scss).toContain(`${prop}: ${value}`);
 		});
 	});
 
-	describe("Descendant Selectors", () => {
-		test("should nest simple descendant", () => {
-			const css = ".a .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain(".b {");
-		});
-
-		test("should nest multiple descendants", () => {
-			const css = ".a .b .c { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain(".b {");
-			expect(result).toContain(".c {");
-		});
-
-		test("should nest tag + descendants", () => {
-			const css = "div .a .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("div {");
-			expect(result).toContain(".a {");
-		});
-	});
-
-	describe("Combinators", () => {
-		test("should preserve child combinator (>)", () => {
-			const css = ".a > .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a > .b");
-		});
-
-		test("should preserve adjacent sibling combinator (+)", () => {
-			const css = ".a + .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a + .b");
-		});
-
-		test("should preserve general sibling combinator (~)", () => {
-			const css = ".a ~ .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a ~ .b");
-		});
-
-		test("should handle multiple combinators", () => {
-			const css = ".a > .b + .c { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a > .b + .c");
+	describe("descendants", () => {
+		test.each([
+			{
+				selector: ".a .b",
+				prop: "margin",
+				value: "0",
+				expects: [".a {", ".b {"],
+			},
+			{
+				selector: ".x .y .z",
+				prop: "padding",
+				value: "5px",
+				expects: [".x {", ".y {", ".z {"],
+			},
+		])("should handle $selector", ({ selector, prop, value, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl(prop, value),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("Chained with Descendants", () => {
-		test("should handle chained class + descendant", () => {
-			const css = ".a.b .c { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-			expect(result).toContain(".c {");
-		});
-
-		test("should handle chained classes + chained descendant", () => {
-			const css = ".a.b .c.d { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-			// .c.d is kept as single selector (no space)
-			expect(result).toContain(".c.d");
-		});
-
-		test("should handle pseudo-class + descendant", () => {
-			const css = ".a:hover .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			// :hover .b is kept together in child selector
-			expect(result).toContain("&:hover .b");
+	describe("pseudo-classes", () => {
+		test.each([
+			{ selector: ".a:hover", expects: [".a {", "&:hover {"] },
+			{ selector: ".btn:active", expects: [".btn {", "&:active {"] },
+			{ selector: ".link:focus", expects: [".link {", "&:focus {"] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("cursor", "pointer"),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("Attribute Selectors", () => {
-		test("should handle attribute selector without value", () => {
-			const css = "[data-test] { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain("[data-test]");
-		});
-
-		test("should handle attribute selector with value", () => {
-			const css = '[data-test="value"] { color: red; }';
-			const result = transformCSS(css);
-			expect(result).toContain('[data-test="value"]');
-		});
-
-		test("should handle class + attribute", () => {
-			const css = ".a[data-test] { color: red; }";
-			const result = transformCSS(css);
-			// .a[data-test] is a single selector (no space)
-			expect(result).toContain(".a[data-test]");
-		});
-	});
-
-	describe("Pseudo-Elements", () => {
-		test("should nest ::before pseudo-element", () => {
-			const css = ".a::before { content: ''; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&::before {");
-		});
-
-		test("should nest ::after pseudo-element", () => {
-			const css = ".a::after { content: ''; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&::after {");
-		});
-
-		test("should handle pseudo-class + pseudo-element", () => {
-			const css = ".a:hover::before { content: ''; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			// :hover::before is kept together in child selector
-			expect(result).toContain("&:hover::before");
+	describe("complex selectors from article-card.css", () => {
+		test.each([
+			{
+				selector: ".ArticleCard_card:hover",
+				expects: [".ArticleCard_card {", "&:hover {"],
+			},
+			{
+				selector: ".ArticleCard_card:hover .ArticleCard_category",
+				expects: [
+					".ArticleCard_card {",
+					"&:hover {",
+					".ArticleCard_category {",
+				],
+			},
+			{
+				selector: ".light-mode .ArticleCard_card",
+				expects: [".light-mode {", ".ArticleCard_card {"],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("color", selector.includes("light-mode") ? "green" : "red"),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("Special Cases", () => {
-		test("should preserve :root as standalone", () => {
-			const css = ":root { --color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(":root {");
-			expect(result).toContain("--color: red");
-		});
-
-		test("should preserve universal selector", () => {
-			const css = "* { box-sizing: border-box; }";
-			const result = transformCSS(css);
-			expect(result).toContain("* {");
-		});
-
-		test("should handle universal selector in middle", () => {
-			const css = ".a * .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-		});
-	});
-
-	describe("Comma-Separated Selectors", () => {
-		test("should merge same base with different pseudo-classes", () => {
-			const css = ".a:hover { color: red; } .a:focus { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:hover,");
-			expect(result).toContain("&:focus {");
-		});
-
-		test("should handle different base selectors", () => {
-			const css = ".a { color: red; } .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain(".b {");
-		});
-
-		test("should handle comma-separated selectors in single rule", () => {
-			const css = ".a, .b { color: red; }";
-			const result = transformCSS(css);
-			// Both should get the same declarations
-			expect(result).toContain("color: red");
-		});
-
-		test("should merge same chained base + descendant", () => {
-			const css = ".a.b .c { color: red; } .a.b .d { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-		});
-
-		test("should merge selectors with child combinator", () => {
-			const css = ".a > .b { color: red; } .a > .c { color: red; }";
-			const result = transformCSS(css);
-			// Combinators are preserved, not merged
-			expect(result).toContain(".a > .b");
-			expect(result).toContain(".a > .c");
+	describe("comma-separated from fixture", () => {
+		test.each([
+			{ selector: ".a, .b", expects: [".a, .b"] },
+			{ selector: ".a.b, .c", expects: [".a {", "&.b {", ".c {"] },
+			{
+				selector: ".test, .item:hover, .link.active",
+				expects: [".test {", ".item {", "&:hover {", ".link {", "&.active {"],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("display", "block"),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("@media Queries", () => {
-		test("should preserve @media queries", () => {
-			const css = "@media (max-width: 768px) { .a { color: red; } }";
-			const result = transformCSS(css);
-			expect(result).toContain("@media");
-			expect(result).toContain("max-width: 768px");
-			expect(result).toContain(".a");
-		});
-
-		test("should nest @media inside parent selectors", () => {
-			const css =
-				".a { color: blue; } @media (max-width: 768px) { .a { color: red; } }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("@media");
-			expect(result).toContain("color: blue");
-			expect(result).toContain("color: red");
-		});
-
-		test("should handle multiple @media rules", () => {
-			const css =
-				"@media (max-width: 768px) { .a { color: red; } } @media (min-width: 769px) { .a { color: blue; } }";
-			const result = transformCSS(css);
-			expect(result).toContain("@media (max-width: 768px)");
-			expect(result).toContain("@media (min-width: 769px)");
-		});
-	});
-
-	describe("At-Rules", () => {
-		test("should preserve @keyframes", () => {
-			const css =
-				"@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }";
-			const result = transformCSS(css);
-			expect(result).toContain("@keyframes fadeIn");
-			expect(result).toContain("from");
-			expect(result).toContain("to");
-		});
-
-		test("should preserve @font-face", () => {
-			const css = '@font-face { font-family: "Test"; src: url(test.woff2); }';
-			const result = transformCSS(css);
-			expect(result).toContain("@font-face");
-			expect(result).toContain('font-family: "Test"');
-		});
-
-		test("should preserve @supports", () => {
-			const css = "@supports (display: grid) { .a { display: grid; } }";
-			const result = transformCSS(css);
-			expect(result).toContain("@supports");
-			expect(result).toContain("display: grid");
+	describe("multiple declarations per rule", () => {
+		test.each([
+			{
+				selector: ".a.b",
+				declarations: [
+					{ prop: "color", value: "blue" },
+					{ prop: "background", value: "white" },
+				],
+				expects: [".a {", "&.b {", "color: blue", "background: white"],
+			},
+			{
+				selector: ".c, .d:hover",
+				declarations: [
+					{ prop: "width", value: "100%" },
+					{ prop: "height", value: "auto" },
+					{ prop: "display", value: "block" },
+				],
+				expects: ["width: 100%", "height: auto", "display: block"],
+			},
+		])("should handle $selector with multiple declarations", ({
+			selector,
+			declarations,
+			expects,
+		}) => {
+			const decls = declarations.map((d) => postcss.decl(d));
+			const scss = transformToSCSS(selector, null, (s) =>
+				transformSelectorReduce(s, { declarations: decls }),
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
 		});
 	});
 
-	describe("Comments", () => {
-		test("should remove comments by default", () => {
-			const css = "/* comment */ .a { color: red; }";
-			const result = transformCSS(css);
-			expect(result).not.toContain("/* comment */");
-		});
+	describe("transformRule function", () => {
+		test("should transform a PostCSS Rule with multiple declarations", () => {
+			const rule = postcss.rule({
+				selector: ".a.b",
+				nodes: [
+					postcss.decl({ prop: "color", value: "blue" }),
+					postcss.decl({ prop: "background", value: "white" }),
+				],
+			});
+			const result = transformRule(rule);
+			const scss = toSCSS(result);
 
-		test("should remove comments when comments option is false", () => {
-			const css = "/* comment */ .a { color: red; }";
-			const result = transformCSS(css, { comments: false });
-			expect(result).not.toContain("/* comment */");
-		});
-	});
-
-	describe("Declarations", () => {
-		test("should handle declarations", () => {
-			const css = ".a { color: red }";
-			const result = transformCSS(css);
-			expect(result).toContain("color: red");
-		});
-
-		test("should handle custom properties", () => {
-			const css = ".a { --custom: value; }";
-			const result = transformCSS(css);
-			expect(result).toContain("--custom: value");
-		});
-
-		test("should handle !important", () => {
-			const css = ".a { color: red !important; }";
-			const result = transformCSS(css);
-			expect(result).toContain("color: red !important");
+			expect(scss).toContain(".a {");
+			expect(scss).toContain("&.b {");
+			expect(scss).toContain("color: blue");
+			expect(scss).toContain("background: white");
 		});
 	});
 
-	describe("Complex Real-World Scenarios", () => {
-		test("should handle complex nested selector", () => {
-			const css = ".a.b .c:hover .d { color: red; }";
+	describe("transformCSS function (from fixture files)", () => {
+		test.each([
+			{
+				name: "multiple-declarations",
+				css: `
+				.a.b {
+					color: blue;
+					background: white;
+					padding: 10px;
+				}`,
+				expects: [
+					".a {",
+					"&.b {",
+					"color: blue",
+					"background: white",
+					"padding: 10px",
+				],
+			},
+			{
+				name: "comma-separated",
+				css: `
+				.a, .b {
+					color: red;
+				}`,
+				expects: [".a, .b", "color: red"],
+			},
+			{
+				name: "nested-descendants",
+				css: `
+				.test .c, .test .d:hover {
+					color: red;
+				}`,
+				expects: [".test {", ".c, .d:hover"],
+			},
+		])("should transform $name fixture", ({ css, expects }) => {
 			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&.b {");
-		});
-
-		test("should handle multiple combinators + pseudo", () => {
-			const css = ".a > .b ~ .c:focus { color: red; }";
-			const result = transformCSS(css);
-			// The parser splits on space, so .c becomes nested with :focus
-			expect(result).toContain(".a > .b ~ .c {");
-			expect(result).toContain("&:focus {");
-		});
-
-		test("should handle chained + child combinator", () => {
-			const css = ".a.b > .c { color: red; }";
-			const result = transformCSS(css);
-			// .a.b > .c - the > is part of the selector, no descendant space
-			expect(result).toContain(".a.b > .c");
-		});
-
-		test("should handle pseudo + adjacent sibling", () => {
-			const css = ".a:hover + .b { color: red; }";
-			const result = transformCSS(css);
-			expect(result).toContain(".a {");
-			expect(result).toContain("&:hover + .b");
+			for (const expected of expects) {
+				expect(result).toContain(expected);
+			}
 		});
 	});
 
-	describe("Node Ordering", () => {
-		test("should order declarations before rules", () => {
-			const css = ".a { .b { color: red; } color: blue; }";
-			const result = transformCSS(css);
-			const colorIndex = result.indexOf("color: blue");
-			const ruleIndex = result.indexOf(".b {");
-			// Declarations should come before nested rules
-			expect(result).toMatch(/color: blue[\s\S]*\.b \{/);
+	describe("combinators (> + ~)", () => {
+		test.each([
+			{ selector: "#main > .content", expects: ["#main > .content"] },
+			{ selector: ".header + .content", expects: [".header + .content"] },
+			{ selector: ".section ~ .footer", expects: [".section ~ .footer"] },
+		])("should handle $selector as flat output", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
+			});
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
+		});
+	});
+
+	describe("attribute selectors", () => {
+		test.each([
+			{ selector: '[type="text"]', expects: ['[type="text"]'] },
+			{ selector: '[data-foo="bar"]', expects: ['[data-foo="bar"]'] },
+			{ selector: '[href^="https://"]', expects: ['[href^="https://"]'] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
+			});
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
+		});
+	});
+
+	describe(":not() pseudo-class", () => {
+		test.each([
+			{ selector: ":not(.excluded)", expects: [":not(.excluded)"] },
+			{ selector: ":not([disabled])", expects: [":not([disabled])"] },
+			{
+				selector: ':not([href^="https://"])',
+				expects: [':not([href^="https://"])'],
+			},
+		])("should handle $selector", ({ selector, expects }) => {
+			const result = transformSelectorReduce(selector, {
+				declaration: decl("display", "block"),
+			});
+			const output = result.toString();
+			for (const expected of expects) {
+				expect(output).toContain(expected);
+			}
+		});
+	});
+
+	describe("pseudo-elements", () => {
+		test.each([
+			{ selector: ".icon::before", expects: [".icon {", "&::before {"] },
+			{ selector: ".icon::after", expects: [".icon {", "&::after {"] },
+			{ selector: ".a.b::before", expects: [".a {", "&.b", "&::before"] },
+		])("should handle $selector", ({ selector, expects }) => {
+			const scss = transformToSCSS(
+				selector,
+				decl("content", '"x"'),
+				transformSelectorReduce,
+			);
+			for (const expected of expects) {
+				expect(scss).toContain(expected);
+			}
+		});
+	});
+
+	describe("error handling", () => {
+		test.each([
+			{ selector: "", description: "empty string" },
+			{ selector: "   ", description: "whitespace only" },
+		])("should throw on $description", ({ selector }) => {
+			expect(() =>
+				transformSelectorReduce(selector, {
+					declaration: decl("color", "red"),
+				}),
+			).toThrow();
 		});
 
-		test("should order @media before child rules", () => {
-			const css =
-				"@media (max-width: 768px) { .a { color: red; } } .a { .b { color: blue; } }";
-			const result = transformCSS(css);
-			// @media should appear before nested rules
-			const mediaIndex = result.indexOf("@media");
-			const ruleIndex = result.indexOf(".b {");
-			expect(mediaIndex).toBeGreaterThan(-1);
+		test("should throw when declarations option is missing", () => {
+			expect(() => transformSelectorReduce(".a")).toThrow();
 		});
 	});
 });

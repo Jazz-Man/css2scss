@@ -19,7 +19,6 @@ program
 	.option("-r, --recursive", "Process directories recursively", false)
 	.option("-o, --output <path>", "Output directory")
 	.option("--ext <extension>", "Output extension", ".scss")
-	.option("--no-comments", "Remove comments", false)
 	.option("-v, --verbose", "Verbose output", false)
 	.option("-q, --quiet", "Quiet mode (errors only)", false)
 	/**

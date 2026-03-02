@@ -1,21 +1,22 @@
 /* Single rule with multiple declarations */
 .a.b {
-  color: blue;
-  background: white;
-  padding: 10px;
-  margin: 0;
+	color: blue;
+	background: white;
+	padding: 10px;
+	margin: 0;
 }
 
 /* Comma-separated with multiple declarations */
-.c, .d:hover {
-  width: 100%;
-  height: auto;
-  display: block;
+.c,
+.d:hover {
+	width: 100%;
+	height: auto;
+	display: block;
 }
 
 /* Nested pattern with multiple declarations */
 .container .item {
-  font-size: 16px;
-  line-height: 1.5;
-  color: #333;
+	font-size: 16px;
+	line-height: 1.5;
+	color: #333;
 }

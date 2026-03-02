@@ -51,7 +51,7 @@ describe("file utils", () => {
 			let errorThrown = false;
 			try {
 				await readFile(nonExistent);
-			} catch (e) {
+			} catch (_e) {
 				errorThrown = true;
 			}
 			expect(errorThrown).toBe(true);

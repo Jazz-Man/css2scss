@@ -1,19 +1,26 @@
 /* Simple comma-separated */
-.a, .b {
-  color: red;
+.a,
+.b {
+	color: red;
 }
 
 /* Chained + simple */
-.a.b, .c {
-  width: 100px;
+.a.b,
+.c {
+	width: 100px;
 }
 
 /* Multiple with pseudo */
-.test, .item:hover, .link.active {
-  display: block;
+.test,
+.item:hover,
+.link.active {
+	display: block;
 }
 
 /* Real-world pattern */
-.btn, .button, [type="submit"], .primary-btn:hover {
-  cursor: pointer;
+.btn,
+.button,
+[type="submit"],
+.primary-btn:hover {
+	cursor: pointer;
 }

@@ -1,8 +1,6 @@
 import { basename, dirname, join } from "node:path";
 import fglob from "fast-glob";
-import scss from "postcss-scss";
-import { parseCSS } from "./core/parser.js";
-import { transform } from "./core/transformer.js";
+import { transformCSS } from "./core/transformer.js";
 import { ensureDirectory, readFile, writeFile } from "./utils/file.js";
 import { logger } from "./utils/logger.js";
 
@@ -10,14 +8,13 @@ import { logger } from "./utils/logger.js";
  * Converts a CSS string to a SCSS string.
  *
  * @param {string} cssString - The CSS string to convert.
- * @param {Object} options - The options for the conversion.
+ * @param {Object} options - The options for the conversion (unused, kept for API compatibility).
  * @returns {Promise<string>} The SCSS string.
  */
-export async function convertCSS(cssString, options = {}) {
-	const ast = parseCSS(cssString);
-	const transformedAst = transform(ast, options);
-
-	return transformedAst.toString(scss.syntax);
+export async function convertCSS(cssString, _options = {}) {
+	// Note: The new transformer's transformCSS is synchronous, but we keep async for API compatibility
+	// The options parameter is kept for backward compatibility but is no longer used
+	return transformCSS(cssString);
 }
 
 /**
