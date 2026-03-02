@@ -109,58 +109,114 @@ function buildSingleSelector(selector, declarations, root) {
 }
 
 /**
- * Build nested rules for a group of selectors with common LCP
- * @param {{selectors: Array<{selector: string, nodes: Array}>, lcpNode: import('./selector-trie.js').SelectorTrieNode, path: string[]}} group
+ * @typedef {object} GroupingStrategy
+ * @property {(group: object) => boolean} canHandle - Check if strategy applies
+ * @property {(group: object, declarations: import('postcss').Declaration[], root: import('postcss').Root) => void} build - Build output
+ */
+
+// ============================================================================
+// Strategy 1: Single Selector
+// ============================================================================
+
+/**
+ * Check if single selector strategy applies
+ * @param {{selectors: Array}} group - Selector group
+ * @returns {boolean} True if only one selector
+ */
+function canHandleSingle(group) {
+	return group.selectors.length === 1;
+}
+
+/**
+ * Build output for a single selector
+ * @param {{selectors: Array}} group - Selector group
  * @param {import('postcss').Declaration[]} declarations - Declarations to add
  * @param {import('postcss').Root} root - PostCSS root to append to
  */
-function buildLCPGroup(group, declarations, root) {
-	const { selectors, path } = group;
+function buildSingle(group, declarations, root) {
+	buildSingleSelector(group.selectors[0].selector, declarations, root);
+}
 
-	if (selectors.length === 1) {
-		// Single selector - use simple path
-		buildSingleSelector(selectors[0].selector, declarations, root);
-		return;
-	}
+// ============================================================================
+// Strategy 2: Non-Space Combinators (Flat Output)
+// ============================================================================
 
-	// Phase 1: Check if LCP path contains non-space combinators
-	// These cannot be properly expressed in nested SCSS rules
-	if (path.length > 0 && hasNonSpaceCombinators(path)) {
-		// Output as flat selectors instead of nesting
-		buildFlatSelectors(selectors, declarations, root);
-		return;
-	}
+/**
+ * Check if flat output strategy applies (non-space combinators in path)
+ * @param {{path: string[]}} group - Selector group with LCP path
+ * @returns {boolean} True if path contains non-space combinators
+ */
+function canHandleFlat(group) {
+	return group.path.length > 0 && hasNonSpaceCombinators(group.path);
+}
 
-	// When path is empty, there's no common prefix
-	// Use structure-based grouping for selectors with similar patterns
-	if (path.length === 0) {
-		const structureGroups = groupByStructure(selectors);
+/**
+ * Build flat output for selectors with non-space combinators
+ * @param {{selectors: Array}} group - Selector group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildFlat(group, declarations, root) {
+	buildFlatSelectors(group.selectors, declarations, root);
+}
 
-		// For each structure group, build the nested output
-		for (const group of structureGroups.values()) {
-			if (group.length === 1) {
-				// Single selector, use simple path
-				buildSingleSelector(group[0].selector, declarations, root);
-			} else {
-				// Try to build structure group
-				// Returns false if grouping failed (e.g., non-space combinators)
-				const grouped = buildStructureGroup(group, declarations, root);
+// ============================================================================
+// Strategy 3: Structure Grouping (No LCP)
+// ============================================================================
 
-				if (!grouped) {
-					// Grouping failed, output as flat selectors
-					buildFlatSelectors(group, declarations, root);
-				}
+/**
+ * Check if structure grouping applies (empty LCP path)
+ * @param {{path: string[]}} group - Selector group
+ * @returns {boolean} True if path is empty
+ */
+function canHandleStructure(group) {
+	return group.path.length === 0;
+}
+
+/**
+ * Build output using structure-based grouping
+ * @param {{selectors: Array}} group - Selector group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildStructure(group, declarations, root) {
+	const structureGroups = groupByStructure(group.selectors);
+
+	for (const subgroup of structureGroups.values()) {
+		if (subgroup.length === 1) {
+			buildSingleSelector(subgroup[0].selector, declarations, root);
+		} else {
+			const grouped = buildStructureGroup(subgroup, declarations, root);
+			if (!grouped) {
+				buildFlatSelectors(subgroup, declarations, root);
 			}
 		}
-		return;
 	}
+}
 
-	// Multiple selectors with common prefix
-	// Build the parent rule path from LCP using helper function
+// ============================================================================
+// Strategy 4: LCP Grouping (Default)
+// ============================================================================
+
+/**
+ * LCP strategy always applies as fallback
+ * @returns {boolean} Always true
+ */
+function canHandleLCP() {
+	return true;
+}
+
+/**
+ * Build nested output using LCP path
+ * @param {{selectors: Array, path: string[]}} group - Selector group with LCP
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildLCP(group, declarations, root) {
+	const { selectors, path } = group;
+
 	const currentRule = buildFromPath(path, SelectorTrie.parseKey, root);
 
-	// Now add the divergent selectors at the leaf level
-	// Check if last node in path was a space combinator to determine & prefix
 	const lastPathNodeWasSpaceCombinator =
 		path.length > 0 &&
 		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
@@ -176,9 +232,39 @@ function buildLCPGroup(group, declarations, root) {
 		const leafRule = postcss.rule({ selector: leafSelector });
 		currentRule.append(leafRule);
 
-		// Add declarations
 		for (const decl of declarations) {
 			leafRule.append(decl.clone());
+		}
+	}
+}
+
+// ============================================================================
+// Strategy Dispatcher
+// ============================================================================
+
+/**
+ * Grouping strategies in priority order
+ * @type {GroupingStrategy[]}
+ */
+const strategies = [
+	{ canHandle: canHandleSingle, build: buildSingle },
+	{ canHandle: canHandleFlat, build: buildFlat },
+	{ canHandle: canHandleStructure, build: buildStructure },
+	{ canHandle: canHandleLCP, build: buildLCP },
+];
+
+/**
+ * Build nested rules for a group of selectors with common LCP
+ * Dispatches to appropriate strategy based on group characteristics
+ * @param {{selectors: Array<{selector: string, nodes: Array}>, lcpNode: import('./selector-trie.js').SelectorTrieNode, path: string[]}} group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
+ */
+function buildLCPGroup(group, declarations, root) {
+	for (const strategy of strategies) {
+		if (strategy.canHandle(group)) {
+			strategy.build(group, declarations, root);
+			return;
 		}
 	}
 }

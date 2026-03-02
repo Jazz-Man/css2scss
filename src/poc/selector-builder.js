@@ -20,17 +20,6 @@ import postcss from "postcss";
 import { COMBINATORS } from "./selector-trie.js";
 
 /**
- * Parse a trie key to extract node type and value
- * @param {string} key - Trie key (format: "type:value")
- * @param {function} parseKey - Function to parse the key (e.g., SelectorTrie.parseKey)
- * @returns {{type: string, value: string}} Parsed type and value
- * @internal
- */
-function _parseTrieKey(key, parseKey) {
-	return parseKey(key);
-}
-
-/**
  * Determine if a selector needs an ampersand prefix
  * @param {{type: string, value: string}} node - Current node
  * @param {{type: string, value: string}|null} prevNode - Previous node in sequence
