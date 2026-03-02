@@ -1,107 +1,221 @@
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
+import { SelectorTrie } from "./selector-trie.js";
 
 /**
- * Get the "structure" of a selector for grouping purposes
- * Structure is the sequence of node types (excluding the first node's value)
- * @param {import('postcss-selector-parser').Selector} sel
- * @returns {string[]} Array of node types/values representing the nesting structure
+ * Build nested rules for a single selector using the trie-based approach
+ * @param {string} selector - CSS selector string
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
  */
-function getSelectorStructure(sel) {
-	const structure = [];
-	let first = true;
+function buildSingleSelector(selector, declarations, root) {
+	selectorParser((selectors) => {
+		selectors.each((sel) => {
+			let currentRule = null;
+			let nodeIndex = 0;
 
-	sel.each((node) => {
-		if (first) {
-			first = false;
-			return; // Skip first node - it varies per selector
-		}
+			sel.each((node) => {
+				if (node.type === "combinator" && node.value === " ") {
+					return;
+				}
 
-		if (node.type === "combinator") {
-			structure.push(`comb:${node.value}`);
-		} else if (node.type === "class") {
-			structure.push("class");
-		} else if (node.type === "pseudo") {
-			structure.push(`pseudo:${node.value}`);
-		} else if (node.type === "id") {
-			structure.push("id");
-		} else if (node.type === "tag") {
-			structure.push("tag");
-		} else if (node.type === "attribute") {
-			structure.push("attr");
-		} else {
-			structure.push(node.type);
-		}
-	});
+				const prevNode = node.prev();
+				let ruleSelector;
 
-	return structure;
+				if (!prevNode) {
+					ruleSelector = node.toString();
+				} else if (prevNode.type === "combinator" && prevNode.value === " ") {
+					ruleSelector = node.toString();
+				} else {
+					ruleSelector = `&${node.toString()}`;
+				}
+
+				if (nodeIndex === 0) {
+					currentRule = postcss.rule({ selector: ruleSelector });
+					root.append(currentRule);
+				} else {
+					const newRule = postcss.rule({ selector: ruleSelector });
+					if (currentRule) {
+						currentRule.append(newRule);
+						currentRule = newRule;
+					}
+				}
+
+				nodeIndex++;
+			});
+
+			// Add declarations to the leaf rule
+			if (currentRule) {
+				for (const decl of declarations) {
+					currentRule.append(decl.clone());
+				}
+			}
+		});
+	}).processSync(selector);
 }
 
 /**
- * Extract the first node's selector from a selector
- * @param {import('postcss-selector-parser').Selector} sel
- * @returns {string} The first node as a string
+ * Build nested rules for a group of selectors with common LCP
+ * @param {{selectors: Array<{selector: string, nodes: Array}>, lcpNode: import('./selector-trie.js').SelectorTrieNode, path: string[]}} group
+ * @param {import('postcss').Declaration[]} declarations - Declarations to add
+ * @param {import('postcss').Root} root - PostCSS root to append to
  */
-function getFirstNodeSelector(sel) {
-	const first = sel.first;
-	return first ? first.toString() : sel.toString();
-}
+function buildLCPGroup(group, declarations, root) {
+	const { selectors, lcpNode, path } = group;
 
-/**
- * Build nested rules from a group of selectors with the same structure
- * @param {{selectors: import('postcss-selector-parser').Selector[], templateSel: import('postcss-selector-parser').Selector}} group
- * @param {import('postcss').Declaration[]} declarations
- * @param {import('postcss').Root} root
- */
-function buildNestedRules(group, declarations, root) {
-	const { selectors, templateSel } = group;
-	const firstNodeSelectors = selectors.map(getFirstNodeSelector).map((s) => s.trim());
+	if (selectors.length === 1) {
+		// Single selector - use simple path
+		buildSingleSelector(selectors[0].selector, declarations, root);
+		return;
+	}
 
-	/** @type {import('postcss').Rule|null} */
+	// When path is empty, there's no common prefix
+	// Check if selectors have the same structure for aggressive grouping
+	if (path.length === 0) {
+		const structureGroups = new Map();
+
+		for (const sel of selectors) {
+			// Build structure key from nodes (excluding first node's value)
+			const structure = sel.nodes.slice(1).map((n) => n.type).join("|");
+
+			if (!structureGroups.has(structure)) {
+				structureGroups.set(structure, []);
+			}
+			structureGroups.get(structure).push(sel);
+		}
+
+		// For each structure group, build the nested output
+		for (const group of structureGroups.values()) {
+			if (group.length === 1) {
+				// Single selector, use simple path
+				buildSingleSelector(group[0].selector, declarations, root);
+			} else {
+				// Multiple selectors with same structure
+				// Extract first nodes and common structure
+				const firstNodes = group.map((s) => s.nodes[0].value);
+				const templateNodes = group[0].nodes.slice(1);
+
+				// Create parent rule with comma-separated first nodes
+				const parentRule = postcss.rule({ selector: firstNodes.join(", ") });
+				root.append(parentRule);
+
+				// Build nested structure from template nodes
+				let currentRule = parentRule;
+				for (let i = 0; i < templateNodes.length; i++) {
+					const node = templateNodes[i];
+					let ruleSelector;
+
+					// Check if previous node was a space combinator
+					const prevNode = i > 0 ? templateNodes[i - 1] : null;
+					if (prevNode && prevNode.type === "combinator" && prevNode.value === " ") {
+						ruleSelector = node.value;
+					} else if (i === 0 || (prevNode && prevNode.type === "combinator" && prevNode.value === " ")) {
+						// First node after parent, or after space combinator
+						if (node.type === "pseudo") {
+							ruleSelector = "&" + node.value;
+						} else {
+							ruleSelector = node.value;
+						}
+					} else {
+						ruleSelector = "&" + node.value;
+					}
+
+					const newRule = postcss.rule({ selector: ruleSelector });
+					currentRule.append(newRule);
+					currentRule = newRule;
+				}
+
+				// Add declarations to leaf rule
+				for (const decl of declarations) {
+					currentRule.append(decl.clone());
+				}
+			}
+		}
+		return;
+	}
+
+	// Multiple selectors with common prefix
+	// Build the parent rule path from LCP
 	let currentRule = null;
-	let nodeIndex = 0;
+	let currentDepth = 0;
 
-	templateSel.each((node) => {
-		if (node.type === "combinator" && node.value === " ") {
-			return;
+	// The path contains the LCP nodes - build parent rules for each
+	// We need to skip space combinators when building the nested structure
+	for (let i = 0; i < path.length; i++) {
+		const key = path[i];
+		const nodeType = key.split(":")[0];
+		const value = key.split(":").slice(1).join(":");
+
+		// Skip space combinators - they're implicit in nesting
+		if (nodeType === "combinator" && value === " ") {
+			continue;
 		}
 
-		const prevNode = node.prev();
-		let selector;
-
-		if (!prevNode) {
-			// First node - use comma-separated selectors
-			selector = firstNodeSelectors.join(", ");
-		} else if (prevNode.type === "combinator" && prevNode.value === " ") {
-			selector = node.toString();
+		let ruleSelector;
+		if (currentDepth === 0) {
+			// First rule, use the value directly
+			ruleSelector = value;
 		} else {
-			selector = `&${node.toString()}`;
+			// Check if previous node was a space combinator
+			const prevKey = path[i - 1];
+			const prevType = prevKey.split(":")[0];
+			if (prevType === "combinator") {
+				ruleSelector = value;
+			} else {
+				ruleSelector = `&${value}`;
+			}
 		}
 
-		if (nodeIndex === 0) {
-			currentRule = postcss.rule({ selector });
+		if (currentDepth === 0) {
+			currentRule = postcss.rule({ selector: ruleSelector });
 			root.append(currentRule);
 		} else {
-			const newRule = postcss.rule({ selector });
+			const newRule = postcss.rule({ selector: ruleSelector });
 			if (currentRule) {
 				currentRule.append(newRule);
 				currentRule = newRule;
 			}
 		}
 
-		nodeIndex++;
-	});
+		currentDepth++;
+	}
 
-	// Add declarations to the leaf rule
+	// Now add the divergent selectors at the leaf level
+	// Get the suffixes by removing the common prefix (path.length nodes)
+	// Check if last node in path was a space combinator to determine & prefix
+	const lastPathNodeWasSpaceCombinator =
+		path.length > 0 &&
+		path[path.length - 1].startsWith("combinator:") &&
+		path[path.length - 1].endsWith(" ");
+
+	const divergentSelectors = selectors.map((s) => {
+		const suffix = SelectorTrie.getSuffix(s.nodes, path.length);
+		const trimmed = suffix.trim();
+
+		// If previous node was NOT a space combinator and suffix starts with
+		// pseudo-class, id, or class, add & prefix (chained selectors)
+		// If previous node was a space combinator, don't add & (descendant selectors)
+		const needsAmpersand =
+			!lastPathNodeWasSpaceCombinator &&
+			(trimmed.startsWith(":") || trimmed.startsWith(".") || trimmed.startsWith("#"));
+
+		return needsAmpersand ? "&" + trimmed : trimmed;
+	});
+	const leafSelector = divergentSelectors.join(", ");
+
 	if (currentRule) {
+		const leafRule = postcss.rule({ selector: leafSelector });
+		currentRule.append(leafRule);
+
+		// Add declarations
 		for (const decl of declarations) {
-			currentRule.append(decl.clone());
+			leafRule.append(decl.clone());
 		}
 	}
 }
 
 /**
- * Transforms a CSS selector string into nested SCSS rules using reduce approach
+ * Transforms a CSS selector string into nested SCSS rules using LCP trie approach
  * @param {string} selectorString - CSS selector (e.g., ".a.b, .c:hover")
  * @param {object} options - Options
  * @param {import('postcss').Declaration|import('postcss').Declaration[]} options.declarations - Declaration(s) to add to leaf rules (single or array)
@@ -118,30 +232,22 @@ export function transformSelectorReduce(selectorString, options = {}) {
 		declarations = [declarations];
 	}
 
-	/** @type {Map<string, {selectors: import('postcss-selector-parser').Selector[], templateSel: import('postcss-selector-parser').Selector}>} */
-	const structureGroups = new Map();
+	// Build trie from comma-separated selectors
+	const trie = new SelectorTrie();
 
 	selectorParser((selectors) => {
 		selectors.each((sel) => {
-			if (!sel || sel.length === 0) return true;
-
-			const structure = getSelectorStructure(sel).join("|");
-
-			if (!structureGroups.has(structure)) {
-				structureGroups.set(structure, {
-					selectors: [],
-					templateSel: sel,
-				});
-			}
-
-			structureGroups.get(structure)?.selectors.push(sel);
+			trie.insert(sel.toString().trim());
 			return true;
 		});
 	}).processSync(selectorString);
 
-	// Build nested rules for each structure group
-	for (const group of structureGroups.values()) {
-		buildNestedRules(group, declarations, newRoot);
+	// Get groups by LCP
+	const groups = trie.getGroups();
+
+	// Generate nested output for each group
+	for (const group of groups.values()) {
+		buildLCPGroup(group, declarations, newRoot);
 	}
 
 	return newRoot;

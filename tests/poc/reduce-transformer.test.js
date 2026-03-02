@@ -313,4 +313,73 @@ describe("transformSelectorReduce (POC)", () => {
 			expect(result).toContain("height: auto");
 		});
 	});
+
+	describe("LCP-based grouping", () => {
+		test("should group .test .c, .test .d:hover at .test LCP", () => {
+			const decl = postcss.decl({ prop: "width", value: "100%" });
+			const result = transformSelectorReduce(".test .c, .test .d:hover", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Should nest under .test
+			expect(scss).toContain(".test {");
+			expect(scss).toContain(".c, .d:hover");
+			expect(scss).toContain("width: 100%");
+		});
+
+		test("should group .a:hover, .b:hover by structure at root", () => {
+			const decl = postcss.decl({ prop: "color", value: "red" });
+			const result = transformSelectorReduce(".a:hover, .b:hover", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Should group by structure: .a, .b { &:hover }
+			expect(scss).toContain(".a, .b");
+			expect(scss).toContain("&:hover");
+			expect(scss).toContain("color: red");
+		});
+
+		test("should group .a.b, .a.c at .a LCP", () => {
+			const decl = postcss.decl({ prop: "display", value: "block" });
+			const result = transformSelectorReduce(".a.b, .a.c", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Should nest under .a with chained classes
+			expect(scss).toContain(".a {");
+			expect(scss).toContain("&.b, &.c");
+			expect(scss).toContain("display: block");
+		});
+
+		test("should group .a:hover, .a:focus at .a LCP with & prefix", () => {
+			const decl = postcss.decl({ prop: "color", value: "blue" });
+			const result = transformSelectorReduce(".a:hover, .a:focus", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			// Should nest under .a with &:hover, &:focus
+			expect(scss).toContain(".a {");
+			expect(scss).toContain("&:hover, &:focus");
+			expect(scss).toContain("color: blue");
+		});
+
+		test("should handle complex LCP with multiple descendants", () => {
+			const decl = postcss.decl({ prop: "margin", value: "0" });
+			const result = transformSelectorReduce(
+				".container .item .a, .container .item .b",
+				{ declaration: decl },
+			);
+			const scss = toSCSS(result);
+
+			// Should nest under .container .item
+			expect(scss).toContain(".container {");
+			expect(scss).toContain(".item {");
+			expect(scss).toContain(".a, .b");
+			expect(scss).toContain("margin: 0");
+		});
+	});
 });
