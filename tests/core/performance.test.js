@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from "bun:test";
 import postcss from "postcss";
-import { transformSelectorReduce } from "../../src/core/reduce-transformer.js";
+import { transformSelectorReduce } from "../../src/core/transformer.js";
 import { SelectorTrie } from "../../src/core/selector-trie.js";
 
 describe("Performance Verification", () => {

@@ -272,6 +272,13 @@ export class SelectorTrie {
 		const continuingCount = this._countContinuingSelectors(node);
 
 		if (continuingCount === totalCount) {
+			// Check if any selector ends at this node
+			// If so, this node cannot be LCP because those selectors don't continue
+			if (node.isTerminal && node.selectors.length > 0) {
+				// At least one selector ends here - not a common prefix
+				return null;
+			}
+
 			// All selectors continue, check if we can go deeper
 			for (const child of node.children.values()) {
 				const result = this._findLCPRecursive(child, totalCount);

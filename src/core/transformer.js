@@ -120,11 +120,19 @@ function buildSingleSelector(selector, declarations, root) {
 
 /**
  * Check if single selector strategy applies
- * @param {{selectors: Array}} group - Selector group
- * @returns {boolean} True if only one selector
+ * @param {{selectors: Array, path: string[]}} group - Selector group
+ * @returns {boolean} True if only one selector OR LCP path covers entire selector
  */
 function canHandleSingle(group) {
-	return group.selectors.length === 1;
+	// Check if there's only one selector in the group
+	if (group.selectors.length === 1) {
+		return true;
+	}
+
+	// Check if LCP path covers the entire first selector
+	// This happens when all selectors are identical
+	const firstSelector = group.selectors[0];
+	return group.path.length === firstSelector.nodes.length;
 }
 
 /**

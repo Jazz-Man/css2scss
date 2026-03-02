@@ -245,16 +245,24 @@ export function buildSuffixSelectors(
 ) {
 	return selectors
 		.map((s) => {
-			const suffix = s.nodes
-				.slice(pathLength)
-				.map((n) => n.value)
-				.join("");
-			const trimmed = suffix.trim();
+			const suffixNodes = s.nodes.slice(pathLength);
 
-			// If previous node was NOT a space combinator and suffix starts with
-			// pseudo-class, id, or class, add & prefix (chained selectors)
-			const needsAmpersand =
-				!lastPathNodeWasSpaceCombinator &&
+			// Check if suffix starts with a space combinator
+			// This means we're in descendant context
+			const startsWithSpaceCombinator = suffixNodes.length > 0 &&
+				suffixNodes[0].type === "combinator" &&
+				suffixNodes[0].value === COMBINATORS.SPACE;
+
+			// Build the suffix value
+			let suffix = suffixNodes.map((n) => n.value).join("");
+			let trimmed = suffix.trim();
+
+			// Determine if & prefix is needed:
+			// - If LCP path ended with space combinator, suffix is descendant (no &)
+			// - If suffix starts with space combinator, first class after is descendant (no &)
+			// - Otherwise, if suffix starts with : . or #, it's chained (needs &)
+			const needsAmpersand = !lastPathNodeWasSpaceCombinator &&
+				!startsWithSpaceCombinator &&
 				(trimmed.startsWith(":") ||
 					trimmed.startsWith(".") ||
 					trimmed.startsWith("#"));

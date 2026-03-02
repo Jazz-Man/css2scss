@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { transformSelectorReduce } from "../../src/core/reduce-transformer.js";
+import { transformSelectorReduce } from "../../src/core/transformer.js";
 import { decl, toSCSS, transformToSCSS } from "./helpers.js";
 
 describe("Edge Cases - Comprehensive Coverage", () => {
