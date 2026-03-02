@@ -1,4 +1,5 @@
 import postcss from "postcss";
+import { buildFromTemplate } from "./selector-builder.js";
 
 /**
  * Module for grouping selectors by structural pattern
@@ -91,44 +92,8 @@ export function buildStructureGroup(group, declarations, root) {
 	const parentRule = postcss.rule({ selector: firstNodes.join(", ") });
 	root.append(parentRule);
 
-	// Build nested structure, extracting leaf values from each selector
-	let currentRule = parentRule;
-	for (let i = 0; i < templateNodes.length; i++) {
-		const node = templateNodes[i];
-
-		// Skip space combinators - they're implicit in nesting
-		if (node.type === "combinator" && node.value === " ") {
-			continue;
-		}
-
-		// Extract the actual value from each selector for this position
-		const leafValues = group.map((s) => {
-			const selNode = s.nodes[i + 1]; // +1 because we sliced from index 1
-			return selNode.value;
-		});
-
-		// Determine if we need & prefix
-		const prevNode = i > 0 ? templateNodes[i - 1] : null;
-		const needsAmpersand =
-			(!prevNode || prevNode.type !== "combinator" || prevNode.value !== " ") &&
-			(leafValues[0].startsWith(":") ||
-				leafValues[0].startsWith(".") ||
-				leafValues[0].startsWith("#"));
-
-		// Build leaf selector with grouped values
-		const leafSelector = needsAmpersand
-			? `&${leafValues.join(", &")}`
-			: leafValues.join(", ");
-
-		const newRule = postcss.rule({ selector: leafSelector });
-		currentRule.append(newRule);
-		currentRule = newRule;
-	}
-
-	// Add declarations to leaf rule
-	for (const decl of declarations) {
-		currentRule.append(decl.clone());
-	}
+	// Use buildFromTemplate helper for nested structure
+	buildFromTemplate(group, parentRule, declarations);
 
 	return true;
 }

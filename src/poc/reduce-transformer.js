@@ -1,5 +1,10 @@
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
+import {
+	buildFromNodes,
+	buildFromPath,
+	buildSuffixSelectors,
+} from "./selector-builder.js";
 import { SelectorTrie } from "./selector-trie.js";
 import { buildStructureGroup, groupByStructure } from "./structure-grouper.js";
 
@@ -43,10 +48,15 @@ function buildSingleSelector(selector, declarations, root) {
 	// First, check if the selector contains non-space combinators
 	// If so, output as a flat rule since these can't be properly nested
 	let hasNonSpaceCombinator = false;
+	const nodes = [];
 
 	selectorParser((selectors) => {
 		selectors.each((sel) => {
 			sel.each((node) => {
+				nodes.push({
+					type: node.type,
+					value: node.toString(),
+				});
 				if (node.type === "combinator" && node.value !== " ") {
 					hasNonSpaceCombinator = true;
 				}
@@ -64,50 +74,8 @@ function buildSingleSelector(selector, declarations, root) {
 		return;
 	}
 
-	// Original logic for space-combinator-only selectors
-	selectorParser((selectors) => {
-		selectors.each((sel) => {
-			let currentRule = null;
-			let nodeIndex = 0;
-
-			sel.each((node) => {
-				if (node.type === "combinator" && node.value === " ") {
-					return;
-				}
-
-				const prevNode = node.prev();
-				let ruleSelector;
-
-				if (!prevNode) {
-					ruleSelector = node.toString();
-				} else if (prevNode.type === "combinator" && prevNode.value === " ") {
-					ruleSelector = node.toString();
-				} else {
-					ruleSelector = `&${node.toString()}`;
-				}
-
-				if (nodeIndex === 0) {
-					currentRule = postcss.rule({ selector: ruleSelector });
-					root.append(currentRule);
-				} else {
-					const newRule = postcss.rule({ selector: ruleSelector });
-					if (currentRule) {
-						currentRule.append(newRule);
-						currentRule = newRule;
-					}
-				}
-
-				nodeIndex++;
-			});
-
-			// Add declarations to the leaf rule
-			if (currentRule) {
-				for (const decl of declarations) {
-					currentRule.append(decl.clone());
-				}
-			}
-		});
-	}).processSync(selector);
+	// Use buildFromNodes helper for space-combinator-only selectors
+	buildFromNodes(nodes, root, declarations);
 }
 
 /**
@@ -158,74 +126,21 @@ function buildLCPGroup(group, declarations, root) {
 	}
 
 	// Multiple selectors with common prefix
-	// Build the parent rule path from LCP
-	let currentRule = null;
-	let currentDepth = 0;
-
-	// The path contains the LCP nodes - build parent rules for each
-	// We need to skip space combinators when building the nested structure
-	for (let i = 0; i < path.length; i++) {
-		const key = path[i];
-		const { type: nodeType, value } = SelectorTrie.parseKey(key);
-
-		// Skip space combinators - they're implicit in nesting
-		if (nodeType === "combinator" && value === " ") {
-			continue;
-		}
-
-		let ruleSelector;
-		if (currentDepth === 0) {
-			// First rule, use the value directly
-			ruleSelector = value;
-		} else {
-			// Check if previous node was a space combinator
-			const prevKey = path[i - 1];
-			const { type: prevType } = SelectorTrie.parseKey(prevKey);
-			if (prevType === "combinator") {
-				ruleSelector = value;
-			} else {
-				ruleSelector = `&${value}`;
-			}
-		}
-
-		if (currentDepth === 0) {
-			currentRule = postcss.rule({ selector: ruleSelector });
-			root.append(currentRule);
-		} else {
-			const newRule = postcss.rule({ selector: ruleSelector });
-			if (currentRule) {
-				currentRule.append(newRule);
-				currentRule = newRule;
-			}
-		}
-
-		currentDepth++;
-	}
+	// Build the parent rule path from LCP using helper function
+	const currentRule = buildFromPath(path, SelectorTrie.parseKey, root);
 
 	// Now add the divergent selectors at the leaf level
-	// Get the suffixes by removing the common prefix (path.length nodes)
 	// Check if last node in path was a space combinator to determine & prefix
 	const lastPathNodeWasSpaceCombinator =
 		path.length > 0 &&
 		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
 		SelectorTrie.parseKey(path[path.length - 1]).value === " ";
 
-	const divergentSelectors = selectors.map((s) => {
-		const suffix = SelectorTrie.getSuffix(s.nodes, path.length);
-		const trimmed = suffix.trim();
-
-		// If previous node was NOT a space combinator and suffix starts with
-		// pseudo-class, id, or class, add & prefix (chained selectors)
-		// If previous node was a space combinator, don't add & (descendant selectors)
-		const needsAmpersand =
-			!lastPathNodeWasSpaceCombinator &&
-			(trimmed.startsWith(":") ||
-				trimmed.startsWith(".") ||
-				trimmed.startsWith("#"));
-
-		return needsAmpersand ? `&${trimmed}` : trimmed;
-	});
-	const leafSelector = divergentSelectors.join(", ");
+	const leafSelector = buildSuffixSelectors(
+		selectors,
+		path.length,
+		lastPathNodeWasSpaceCombinator,
+	);
 
 	if (currentRule) {
 		const leafRule = postcss.rule({ selector: leafSelector });
