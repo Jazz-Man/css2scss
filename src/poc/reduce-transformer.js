@@ -155,8 +155,7 @@ function buildLCPGroup(group, declarations, root) {
 	// We need to skip space combinators when building the nested structure
 	for (let i = 0; i < path.length; i++) {
 		const key = path[i];
-		const nodeType = key.split(":")[0];
-		const value = key.split(":").slice(1).join(":");
+		const { type: nodeType, value } = SelectorTrie.parseKey(key);
 
 		// Skip space combinators - they're implicit in nesting
 		if (nodeType === "combinator" && value === " ") {
@@ -170,7 +169,7 @@ function buildLCPGroup(group, declarations, root) {
 		} else {
 			// Check if previous node was a space combinator
 			const prevKey = path[i - 1];
-			const prevType = prevKey.split(":")[0];
+			const { type: prevType } = SelectorTrie.parseKey(prevKey);
 			if (prevType === "combinator") {
 				ruleSelector = value;
 			} else {
@@ -197,8 +196,8 @@ function buildLCPGroup(group, declarations, root) {
 	// Check if last node in path was a space combinator to determine & prefix
 	const lastPathNodeWasSpaceCombinator =
 		path.length > 0 &&
-		path[path.length - 1].startsWith("combinator:") &&
-		path[path.length - 1].endsWith(" ");
+		SelectorTrie.parseKey(path[path.length - 1]).type === "combinator" &&
+		SelectorTrie.parseKey(path[path.length - 1]).value === " ";
 
 	const divergentSelectors = selectors.map((s) => {
 		const suffix = SelectorTrie.getSuffix(s.nodes, path.length);

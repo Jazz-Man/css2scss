@@ -383,3 +383,124 @@ describe("transformSelectorReduce (POC)", () => {
 		});
 	});
 });
+
+describe("Edge Cases - Phase 0: Key encoding with colons", () => {
+	function toSCSS(root) {
+		return root.toString(scss.syntax);
+	}
+
+	describe("attribute selectors with colons in values", () => {
+		test("should handle [href^='https://']", () => {
+			const decl = postcss.decl({ prop: "color", value: "blue" });
+			const result = transformSelectorReduce('[href^="https://"]', {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			expect(scss).toContain('[href^="https://"]');
+			expect(scss).toContain("color: blue");
+		});
+
+		test("should handle multiple attributes with colons", () => {
+			const decl = postcss.decl({ prop: "color", value: "red" });
+			const result = transformSelectorReduce(
+				'[href^="https://"], [src^="http://"]',
+				{ declaration: decl },
+			);
+			const scss = toSCSS(result);
+
+			expect(scss).toContain('[href^="https://"]');
+			expect(scss).toContain('[src^="http://"]');
+			expect(scss).toContain("color: red");
+		});
+	});
+
+	describe("pseudo-elements with double colons", () => {
+		test("should handle ::before", () => {
+			const decl = postcss.decl({ prop: "content", value: '""' });
+			const result = transformSelectorReduce(".element::before", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			expect(scss).toContain(".element {");
+			expect(scss).toContain("&::before");
+			expect(scss).toContain('content: ""');
+		});
+
+		test("should handle ::after", () => {
+			const decl = postcss.decl({ prop: "content", value: '""' });
+			const result = transformSelectorReduce(".element::after", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			expect(scss).toContain(".element {");
+			expect(scss).toContain("&::after");
+			expect(scss).toContain('content: ""');
+		});
+
+		test("should handle grouped pseudo-elements", () => {
+			const decl = postcss.decl({ prop: "display", value: "block" });
+			const result = transformSelectorReduce(".a::before, .b::before", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			expect(scss).toContain(".a, .b");
+			expect(scss).toContain("&::before");
+		});
+	});
+
+	describe(":not() with complex selectors", () => {
+		test("should handle :not() with attribute containing colon", () => {
+			const decl = postcss.decl({ prop: "color", value: "gray" });
+			const result = transformSelectorReduce(':not([href^="https://"])', {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			expect(output).toContain(':not([href^="https://"])');
+			expect(output).toContain("color: gray");
+		});
+
+		test("should handle :not() with multiple classes", () => {
+			const decl = postcss.decl({ prop: "display", value: "none" });
+			const result = transformSelectorReduce(".a:not(.b)", {
+				declaration: decl,
+			});
+			const output = result.toString();
+
+			expect(output).toContain(":not(.b)");
+			expect(output).toContain("display: none");
+		});
+	});
+
+	describe("mixed edge cases", () => {
+		test("should handle attribute with descendant", () => {
+			const decl = postcss.decl({ prop: "cursor", value: "pointer" });
+			const result = transformSelectorReduce(
+				'[data-url="https://example.com"]:hover',
+				{
+					declaration: decl,
+				},
+			);
+			const scss = toSCSS(result);
+
+			expect(scss).toContain('[data-url="https://example.com"]');
+			expect(scss).toContain("&:hover");
+		});
+
+		test("should handle pseudo-element with pseudo-class", () => {
+			const decl = postcss.decl({ prop: "opacity", value: "0" });
+			const result = transformSelectorReduce(".button:hover::before", {
+				declaration: decl,
+			});
+			const scss = toSCSS(result);
+
+			expect(scss).toContain(".button {");
+			expect(scss).toContain("&:hover");
+			expect(scss).toContain("&::before");
+		});
+	});
+});

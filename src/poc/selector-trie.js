@@ -1,6 +1,12 @@
 import selectorParser from "postcss-selector-parser";
 
 /**
+ * ASCII Unit Separator (0x1F) - safe delimiter for CSS selector values
+ * This character is guaranteed not to appear in valid CSS selectors
+ */
+const KEY_DELIMITER = "\x1F";
+
+/**
  * Represents a CSS selector node in the trie
  */
 class SelectorTrieNode {
@@ -14,7 +20,7 @@ class SelectorTrieNode {
 		this.nodeType = nodeType;
 		this.parent = parent;
 		this.children = new Map();
-		this.selectors = []; // Full selectors that end or pass through this node
+		this.selectors = []; // Full selectors that END at this terminal node only
 		this.depth = 0;
 		this.isTerminal = false;
 	}
@@ -62,12 +68,37 @@ export class SelectorTrie {
 
 	/**
 	 * Create a unique key for a trie node based on type and value
+	 * Uses ASCII Unit Separator (0x1F) as delimiter to avoid conflicts
 	 * @param {string} type - Node type
 	 * @param {string} value - Node value
 	 * @returns {string} Unique key
 	 */
 	static createKey(type, value) {
-		return `${type}:${value}`;
+		return `${type}${KEY_DELIMITER}${value}`;
+	}
+
+	/**
+	 * Parse a trie key back into type and value
+	 * @param {string} key - Trie node key
+	 * @returns {{type: string, value: string}} Parsed type and value
+	 */
+	static parseKey(key) {
+		const delimiterIndex = key.indexOf(KEY_DELIMITER);
+		if (delimiterIndex === -1) {
+			// Fallback for old-style keys with ":" delimiter
+			const colonIndex = key.indexOf(":");
+			if (colonIndex !== -1) {
+				return {
+					type: key.slice(0, colonIndex),
+					value: key.slice(colonIndex + 1),
+				};
+			}
+			throw new Error(`Invalid trie key format: ${key}`);
+		}
+		return {
+			type: key.slice(0, delimiterIndex),
+			value: key.slice(delimiterIndex + 1),
+		};
 	}
 
 	/**

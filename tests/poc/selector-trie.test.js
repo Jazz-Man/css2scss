@@ -4,9 +4,10 @@ import { SelectorTrie, SelectorTrieNode } from "../../src/poc/selector-trie.js";
 describe("SelectorTrieNode", () => {
 	test("should create a node with correct properties", () => {
 		const parent = new SelectorTrieNode(null, "root");
-		const node = new SelectorTrieNode("class:.test", "class", parent);
+		const key = SelectorTrie.createKey("class", ".test");
+		const node = new SelectorTrieNode(key, "class", parent);
 
-		expect(node.key).toBe("class:.test");
+		expect(node.key).toBe(key);
 		expect(node.nodeType).toBe("class");
 		expect(node.parent).toBe(parent);
 		expect(node.children).toBeInstanceOf(Map);
@@ -86,15 +87,45 @@ describe("SelectorTrie.parseSelector", () => {
 	});
 });
 
-describe("SelectorTrie.createKey", () => {
+describe("SelectorTrie.createKey and parseKey", () => {
 	test("should create unique keys for different nodes", () => {
 		const key1 = SelectorTrie.createKey("class", ".test");
 		const key2 = SelectorTrie.createKey("class", ".other");
 		const key3 = SelectorTrie.createKey("pseudo", ":hover");
 
-		expect(key1).toBe("class:.test");
-		expect(key2).toBe("class:.other");
-		expect(key3).toBe("pseudo::hover");
+		// Keys should be unique
+		expect(key1).not.toBe(key2);
+		expect(key2).not.toBe(key3);
+		expect(key1).not.toBe(key3);
+	});
+
+	test("should parse keys back into type and value", () => {
+		const key1 = SelectorTrie.createKey("class", ".test");
+		const key2 = SelectorTrie.createKey("pseudo", ":hover");
+		const key3 = SelectorTrie.createKey("attribute", '[href^="https://"]');
+
+		expect(SelectorTrie.parseKey(key1)).toEqual({
+			type: "class",
+			value: ".test",
+		});
+		expect(SelectorTrie.parseKey(key2)).toEqual({
+			type: "pseudo",
+			value: ":hover",
+		});
+		expect(SelectorTrie.parseKey(key3)).toEqual({
+			type: "attribute",
+			value: '[href^="https://"]',
+		});
+	});
+
+	test("should handle values containing colons", () => {
+		const key = SelectorTrie.createKey("attribute", '[href^="https://"]');
+		const parsed = SelectorTrie.parseKey(key);
+
+		expect(parsed.type).toBe("attribute");
+		expect(parsed.value).toBe('[href^="https://"]');
+		// The colon in the URL should NOT be treated as a delimiter
+		expect(parsed.value).toContain(":");
 	});
 });
 
@@ -113,11 +144,13 @@ describe("SelectorTrie.insert", () => {
 
 		expect(trie.selectorCount).toBe(1);
 
-		const classChild = trie.root.children.get("class:.test");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const classChild = trie.root.children.get(classKey);
 		expect(classChild).toBeDefined();
 		expect(classChild?.children.size).toBe(1);
 
-		const combChild = classChild?.children.get("combinator: ");
+		const combKey = SelectorTrie.createKey("combinator", " ");
+		const combChild = classChild?.children.get(combKey);
 		expect(combChild).toBeDefined();
 	});
 
@@ -128,7 +161,8 @@ describe("SelectorTrie.insert", () => {
 
 		expect(trie.selectorCount).toBe(2);
 
-		const classChild = trie.root.children.get("class:.test");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const classChild = trie.root.children.get(classKey);
 		expect(classChild).toBeDefined();
 
 		// After memory leak fix: selectors are only stored at terminal nodes
@@ -136,12 +170,16 @@ describe("SelectorTrie.insert", () => {
 		expect(classChild?.selectors).toHaveLength(0);
 
 		// Terminal nodes (.c and :hover) have the selectors
-		const combChild = classChild?.children.get("combinator: ");
-		const cNode = combChild?.children.get("class:.c");
-		const dNode = combChild?.children.get("class:.d");
+		const combKey = SelectorTrie.createKey("combinator", " ");
+		const combChild = classChild?.children.get(combKey);
+		const cKey = SelectorTrie.createKey("class", ".c");
+		const dKey = SelectorTrie.createKey("class", ".d");
+		const cNode = combChild?.children.get(cKey);
+		const dNode = combChild?.children.get(dKey);
 		expect(cNode?.selectors).toHaveLength(1);
 		expect(dNode?.selectors).toHaveLength(0); // :hover is terminal for .d
-		const hoverNode = dNode?.children.get("pseudo::hover");
+		const hoverKey = SelectorTrie.createKey("pseudo", ":hover");
+		const hoverNode = dNode?.children.get(hoverKey);
 		expect(hoverNode?.selectors).toHaveLength(1);
 	});
 
@@ -149,9 +187,12 @@ describe("SelectorTrie.insert", () => {
 		const trie = new SelectorTrie();
 		trie.insert(".test .c");
 
-		const classChild = trie.root.children.get("class:.test");
-		const combChild = classChild?.children.get("combinator: ");
-		const terminalChild = combChild?.children.get("class:.c");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const classChild = trie.root.children.get(classKey);
+		const combKey = SelectorTrie.createKey("combinator", " ");
+		const combChild = classChild?.children.get(combKey);
+		const cKey = SelectorTrie.createKey("class", ".c");
+		const terminalChild = combChild?.children.get(cKey);
 
 		expect(terminalChild?.isTerminal).toBe(true);
 		expect(terminalChild?.selectors).toHaveLength(1);
@@ -173,7 +214,8 @@ describe("SelectorTrie._countSelectors", () => {
 		trie.insert(".test .c");
 		trie.insert(".other .x");
 
-		const classChild = trie.root.children.get("class:.test");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const classChild = trie.root.children.get(classKey);
 		const count = trie._countSelectors(classChild);
 		expect(count).toBe(1);
 	});
@@ -190,7 +232,11 @@ describe("SelectorTrie.findLCP", () => {
 
 		// LCP should be at the space combinator (both share .test + space)
 		const path = trie.getPath(lcp);
-		expect(path).toEqual(["class:.test", "combinator: "]);
+		const expectedPath = [
+			SelectorTrie.createKey("class", ".test"),
+			SelectorTrie.createKey("combinator", " "),
+		];
+		expect(path).toEqual(expectedPath);
 	});
 
 	test("should find LCP at root for no common prefix", () => {
@@ -227,7 +273,8 @@ describe("SelectorTrie.findLCP", () => {
 		const lcp = trie.findLCP();
 		const path = trie.getPath(lcp);
 		// LCP is at .a
-		expect(path).toEqual(["class:.a"]);
+		const expectedPath = [SelectorTrie.createKey("class", ".a")];
+		expect(path).toEqual(expectedPath);
 	});
 
 	test("should find LCP for pseudo-classes with same base", () => {
@@ -238,7 +285,8 @@ describe("SelectorTrie.findLCP", () => {
 		const lcp = trie.findLCP();
 		const path = trie.getPath(lcp);
 		// LCP is at .a
-		expect(path).toEqual(["class:.a"]);
+		const expectedPath = [SelectorTrie.createKey("class", ".a")];
+		expect(path).toEqual(expectedPath);
 	});
 });
 
@@ -253,21 +301,25 @@ describe("SelectorTrie.getPath", () => {
 		const trie = new SelectorTrie();
 		trie.insert(".test .c");
 
-		const classChild = trie.root.children.get("class:.test");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const classChild = trie.root.children.get(classKey);
 		const path = trie.getPath(classChild);
-		expect(path).toEqual(["class:.test"]);
+		expect(path).toEqual([classKey]);
 	});
 
 	test("should return full path to terminal node", () => {
 		const trie = new SelectorTrie();
 		trie.insert(".test .c");
 
-		const classChild = trie.root.children.get("class:.test");
-		const combChild = classChild?.children.get("combinator: ");
-		const terminalChild = combChild?.children.get("class:.c");
+		const classKey = SelectorTrie.createKey("class", ".test");
+		const combKey = SelectorTrie.createKey("combinator", " ");
+		const cKey = SelectorTrie.createKey("class", ".c");
+		const classChild = trie.root.children.get(classKey);
+		const combChild = classChild?.children.get(combKey);
+		const terminalChild = combChild?.children.get(cKey);
 
 		const path = trie.getPath(terminalChild);
-		expect(path).toEqual(["class:.test", "combinator: ", "class:.c"]);
+		expect(path).toEqual([classKey, combKey, cKey]);
 	});
 });
 
@@ -324,7 +376,7 @@ describe("SelectorTrie.getGroups", () => {
 		expect(groups.size).toBeGreaterThan(0);
 
 		// Check that selectors are properly grouped
-		for (const [key, group] of groups) {
+		for (const [_key, group] of groups) {
 			if (group.selectors.length > 0) {
 				expect(group.selectors[0].selector).toMatch(/^\.a/);
 			}
@@ -367,6 +419,72 @@ describe("SelectorTrie.getSuffix", () => {
 	});
 });
 
+describe("SelectorTrie edge cases - Phase 0 fixes", () => {
+	test("should parse attribute selector with colon in value", () => {
+		const nodes = SelectorTrie.parseSelector('[href^="https://"]');
+
+		expect(nodes).toHaveLength(1);
+		expect(nodes[0].type).toBe("attribute");
+		expect(nodes[0].value).toBe('[href^="https://"]');
+	});
+
+	test("should create and parse key with colon in value", () => {
+		const key = SelectorTrie.createKey("attribute", '[href^="https://"]');
+		const parsed = SelectorTrie.parseKey(key);
+
+		expect(parsed.type).toBe("attribute");
+		expect(parsed.value).toBe('[href^="https://"]');
+	});
+
+	test("should handle pseudo-element with double colon", () => {
+		const nodes = SelectorTrie.parseSelector(".element::before");
+
+		expect(nodes).toHaveLength(2);
+		expect(nodes[0].type).toBe("class");
+		expect(nodes[0].value).toBe(".element");
+		expect(nodes[1].type).toBe("pseudo");
+		expect(nodes[1].value).toBe("::before");
+	});
+
+	test("should create and parse key for pseudo-element", () => {
+		const key = SelectorTrie.createKey("pseudo", "::before");
+		const parsed = SelectorTrie.parseKey(key);
+
+		expect(parsed.type).toBe("pseudo");
+		expect(parsed.value).toBe("::before");
+	});
+
+	test("should insert selector with attribute containing colon", () => {
+		const trie = new SelectorTrie();
+		trie.insert('[href^="https://"]');
+
+		expect(trie.selectorCount).toBe(1);
+	});
+
+	test("should insert selector with pseudo-element", () => {
+		const trie = new SelectorTrie();
+		trie.insert(".element::before");
+
+		expect(trie.selectorCount).toBe(1);
+	});
+
+	test("should handle :not() with complex selector containing colon", () => {
+		const nodes = SelectorTrie.parseSelector(':not([href^="https://"])');
+
+		expect(nodes).toHaveLength(1);
+		expect(nodes[0].type).toBe("pseudo");
+		expect(nodes[0].value).toBe(':not([href^="https://"])');
+	});
+
+	test("should create and parse key for :not() with colon in value", () => {
+		const key = SelectorTrie.createKey("pseudo", ':not([href^="https://"])');
+		const parsed = SelectorTrie.parseKey(key);
+
+		expect(parsed.type).toBe("pseudo");
+		expect(parsed.value).toBe(':not([href^="https://"])');
+	});
+});
+
 describe("SelectorTrie complex scenarios", () => {
 	test("should handle three selectors with varying commonality", () => {
 		const trie = new SelectorTrie();
@@ -388,7 +506,8 @@ describe("SelectorTrie complex scenarios", () => {
 		const path = trie.getPath(lcp);
 
 		// LCP is at .test (diverges at combinator type)
-		expect(path).toEqual(["class:.test"]);
+		const expectedPath = [SelectorTrie.createKey("class", ".test")];
+		expect(path).toEqual(expectedPath);
 	});
 
 	test("should handle multiple levels of nesting", () => {
@@ -400,7 +519,8 @@ describe("SelectorTrie complex scenarios", () => {
 		const path = trie.getPath(lcp);
 
 		// LCP is at .b (both share .a .b)
-		expect(path).toContain("class:.b");
+		const bKey = SelectorTrie.createKey("class", ".b");
+		expect(path).toContain(bKey);
 		expect(path.length).toBeGreaterThanOrEqual(3);
 	});
 });
