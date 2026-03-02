@@ -1,5 +1,4 @@
 import postcss from "postcss";
-
 /**
  * Parses a CSS string into a PostCSS root node.
  *
