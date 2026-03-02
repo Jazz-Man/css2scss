@@ -48,20 +48,21 @@ describe("convertCSS", () => {
 		expect(scss).toContain("max-width: 768px");
 	});
 
-	test("should skip @keyframes (POC limitation)", async () => {
+	test("should preserve @keyframes at-rule", async () => {
 		const css = "@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }";
 		const scss = await convertCSS(css);
-		// POC transformer only handles @media rules, not other at-rules
-		// @keyframes are not preserved in this version
-		expect(scss).toBe("");
+		// @keyframes are preserved as-is (not transformed)
+		expect(scss).toContain("@keyframes fadeIn");
+		expect(scss).toContain("opacity: 0");
+		expect(scss).toContain("opacity: 1");
 	});
 
-	test("should skip @font-face (POC limitation)", async () => {
+	test("should preserve @font-face at-rule", async () => {
 		const css = '@font-face { font-family: "Test"; src: url(test.woff2); }';
 		const scss = await convertCSS(css);
-		// POC transformer only handles @media rules, not other at-rules
-		// @font-face is not preserved in this version
-		expect(scss).toBe("");
+		// @font-face is preserved as-is (not transformed)
+		expect(scss).toContain("@font-face");
+		expect(scss).toContain('font-family: "Test"');
 	});
 
 	test("should handle comma-separated selectors", async () => {
@@ -222,7 +223,7 @@ describe("convertFile", () => {
 		expect(result.scssContent).toContain("max-width: 768px");
 	});
 
-	test("should skip @keyframes in files (POC limitation)", async () => {
+	test("should preserve @keyframes in files", async () => {
 		const inputFile = join(tempDir, "animations.css");
 		const outputFile = join(tempDir, "animations.scss");
 		const cssContent = `
@@ -235,9 +236,10 @@ describe("convertFile", () => {
 		await Bun.write(inputFile, cssContent);
 		const result = await convertFile(inputFile, outputFile);
 
-		// POC transformer only handles @media rules, not other at-rules
-		// @keyframes are not preserved in this version
-		expect(result.scssContent).toBe("");
+		// @keyframes are preserved as-is (not transformed)
+		expect(result.scssContent).toContain("@keyframes fadeIn");
+		expect(result.scssContent).toContain("opacity: 0");
+		expect(result.scssContent).toContain("opacity: 1");
 	});
 
 	test("should throw on non-existent input file", async () => {

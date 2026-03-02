@@ -451,7 +451,22 @@ export function transformCSS(css) {
 	const root = postcss.parse(css);
 	const output = postcss.root();
 
-	// Pass 1: Process non-media rules with merging
+	// Collect non-media at-rules to prepend at the beginning
+	const atRulesToPrepend = [];
+
+	// Pass 1: Collect all non-media at-rules (keyframes, supports, font-face, etc.)
+	root.walkAtRules((atRule) => {
+		// Skip @media - will be processed separately
+		if (atRule.name === "media") {
+			return;
+		}
+		// Only collect top-level at-rules (not nested inside other rules)
+		if (atRule.parent === root) {
+			atRulesToPrepend.push(atRule.clone());
+		}
+	});
+
+	// Pass 2: Process regular rules (not inside at-rules)
 	root.walkRules((rule) => {
 		// Skip rules inside @media or other at-rules
 		if (rule.parent.type === "atrule") {
@@ -462,14 +477,19 @@ export function transformCSS(css) {
 		mergeNodes(output, transformed.nodes);
 	});
 
-	// Pass 2: Process @media rules - merge with existing structure
-	root.walkAtRules(/media/, (atRule) => {
+	// Pass 3: Process @media rules - merge with existing structure
+	root.walkAtRules("media", (atRule) => {
 		atRule.walkRules((rule) => {
 			const transformed = transformRule(rule);
 			// Merge with media context - will find existing rules and nest @media inside
 			mergeNodes(output, transformed.nodes, atRule.params);
 		});
 	});
+
+	// Prepend all collected at-rules at the beginning of output
+	for (let i = atRulesToPrepend.length - 1; i >= 0; i--) {
+		output.prepend(atRulesToPrepend[i]);
+	}
 
 	// Sort all rules to ensure declarations → @media → child rules order
 	for (const node of output.nodes) {
