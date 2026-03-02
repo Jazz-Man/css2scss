@@ -17,41 +17,12 @@
  */
 
 import postcss from "postcss";
-import { COMBINATORS } from "./selector-trie.js";
 
 /**
  * Regex pattern for detecting whitespace-only values (including multiline)
  * Used to identify space combinators in selector nodes
  */
 const WHITESPACE_ONLY = /^\s+$/;
-
-/**
- * Determine if a selector needs an ampersand prefix
- * @param {{type: string, value: string}} node - Current node
- * @param {{type: string, value: string}|null} prevNode - Previous node in sequence
- * @param {boolean} isFirst - Is this the first rule?
- * @returns {boolean} True if ampersand prefix is needed
- */
-export function needsAmpersand(node, prevNode, isFirst) {
-	if (isFirst) {
-		return false;
-	}
-
-	// After space combinator, no ampersand needed (descendant selector)
-	const prevWasSpaceCombinator =
-		prevNode?.type === "combinator" && prevNode?.value === COMBINATORS.SPACE;
-	if (prevWasSpaceCombinator) {
-		return false;
-	}
-
-	// Chained pseudo-class, id, or class need ampersand
-	return (
-		node.type === "pseudo" ||
-		node.value.startsWith(":") ||
-		node.value.startsWith(".") ||
-		node.value.startsWith("#")
-	);
-}
 
 /**
  * Build a rule selector string from a parsed node

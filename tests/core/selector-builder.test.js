@@ -12,65 +12,10 @@ import {
 	buildFromTemplate,
 	buildRuleSelector,
 	buildSuffixSelectors,
-	needsAmpersand,
 } from "../../src/core/selector-builder.js";
 import { SelectorTrie } from "../../src/core/selector-trie.js";
 
 describe("selector-builder", () => {
-	describe("needsAmpersand", () => {
-		test.each([
-			{
-				node: { type: "class", value: ".test" },
-				prevNode: null,
-				isFirst: true,
-				expected: false,
-				description: "first rule",
-			},
-			{
-				node: { type: "class", value: ".child" },
-				prevNode: { type: "combinator", value: " " },
-				isFirst: false,
-				expected: false,
-				description: "after space combinator",
-			},
-			{
-				node: { type: "pseudo", value: ":hover" },
-				prevNode: null,
-				isFirst: false,
-				expected: true,
-				description: "pseudo-class",
-			},
-			{
-				node: { type: "class", value: ".active" },
-				prevNode: null,
-				isFirst: false,
-				expected: true,
-				description: "chained class",
-			},
-			{
-				node: { type: "id", value: "#main" },
-				prevNode: null,
-				isFirst: false,
-				expected: true,
-				description: "chained id",
-			},
-			{
-				node: { type: "tag", value: "div" },
-				prevNode: null,
-				isFirst: false,
-				expected: false,
-				description: "tag (no prefix)",
-			},
-		])("should return $expected for $description", ({
-			node,
-			prevNode,
-			isFirst,
-			expected,
-		}) => {
-			expect(needsAmpersand(node, prevNode, isFirst)).toBe(expected);
-		});
-	});
-
 	describe("buildRuleSelector", () => {
 		test.each([
 			{
