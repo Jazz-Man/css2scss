@@ -72,9 +72,10 @@ selectorParser((selectors) => {
 	}
 }).processSync(
 	// ".ArticleCard_card",
+	// ".ArticleCard_card .Test",
 	// ".ArticleCard_card, .Test",
-	// ".ArticleCard_card.Test",
-	'.ArticleCard_card.Test [data-test="some-value"] .Some-more-selectors #id-element div .more-selectors.and-more:hover .test-last-class:before',
+	".ArticleCard_card.Test",
+	// '.ArticleCard_card.Test [data-test="some-value"] .Some-more-selectors #id-element div .more-selectors.and-more:hover .test-last-class:before',
 );
 
 console.log(newRoot.toString());
