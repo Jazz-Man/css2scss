@@ -152,7 +152,8 @@ function splitBaseChild(nodes) {
  *
  * @example
  * parseSelectorPath(".a:hover") // Returns { basePath: [".a"], childSelector: "&:hover" }
- * parseSelectorPath(".a.b .c") // Returns { basePath: [".a.b"], childSelector: ".c" }
+ * parseSelectorPath(".a.b .c") // Returns { basePath: [".a", "&.b"], childSelector: ".c" }
+ * parseSelectorPath(".a.b .c.d") // Returns { basePath: [".a", "&.b", ".c", "&.d"], childSelector: null }
  * parseSelectorPath(".a:hover .b") // Returns { basePath: [".a"], childSelector: "&:hover .b" }
  * parseSelectorPath(":root") // Returns { basePath: [":root"], childSelector: null }
  */
@@ -173,37 +174,77 @@ function parseSelectorPath(selectorStr) {
 		}
 
 		if (child && child.length > 0) {
-			return { basePath: [basePath], childSelector: `&${nodesToSelector(child)}` };
+			return {
+				basePath: [basePath],
+				childSelector: `&${nodesToSelector(child)}`,
+			};
 		}
 
 		return { basePath: [basePath], childSelector: null };
 	}
 
-	// Multiple parts: first part is the base, rest forms the child selector
-	const firstPartNodes = getNodes(parts[0]);
-	const { base: firstBase, child: firstChild } = splitBaseChild(firstPartNodes);
-	const baseSelector = nodesToSelector(firstBase);
+	// Multiple parts: build nested path
+	const path = [];
 
-	if (!baseSelector) {
+	// Process first part: split into individual nodes
+	const firstPartNodes = getNodes(parts[0]);
+	if (firstPartNodes.length === 0) {
 		return { basePath: [selectorStr], childSelector: null };
 	}
 
-	// Build child selector: start with first part's pseudo (if any), then add rest
-	const childParts = [];
-	if (firstChild && firstChild.length > 0) {
-		childParts.push(`&${nodesToSelector(firstChild)}`);
-	} else {
-		childParts.push("&");
+	// First element of first part becomes the base
+	path.push(firstPartNodes[0].toString());
+
+	// Remaining nodes in first part (chained classes/ids/pseudo) become nested levels
+	let pseudoInFirst = null;
+	for (let i = 1; i < firstPartNodes.length; i++) {
+		const node = firstPartNodes[i];
+		if (node.type === "pseudo") {
+			// Remember pseudo for childSelector
+			pseudoInFirst = `&${node.toString()}`;
+			break;
+		}
+		// Chained class/id becomes nested level
+		path.push(`&${node.toString()}`);
 	}
 
-	// Add remaining parts with proper spacing
-	for (let i = 1; i < parts.length; i++) {
-		childParts.push(parts[i]);
+	// Process middle parts (all except first and last)
+	for (let i = 1; i < parts.length - 1; i++) {
+		const part = parts[i];
+		const partNodes = getNodes(part);
+
+		if (partNodes.length === 0) continue;
+
+		// First node of this part
+		path.push(partNodes[0].toString());
+
+		// Chained classes/ids in this part
+		for (let j = 1; j < partNodes.length; j++) {
+			const node = partNodes[j];
+			if (node.type === "pseudo") break;
+			path.push(`&${node.toString()}`);
+		}
+	}
+
+	// Build childSelector from pseudo in first part + last part
+	const childParts = [];
+
+	if (pseudoInFirst) {
+		childParts.push(pseudoInFirst);
+	}
+
+	// Add last part
+	if (parts.length > 1) {
+		childParts.push(parts[parts.length - 1]);
+	}
+
+	if (childParts.length === 0) {
+		return { basePath: path, childSelector: null };
 	}
 
 	const childSelector = childParts.join(" ");
 
-	return { basePath: [baseSelector], childSelector };
+	return { basePath: path, childSelector };
 }
 
 /**
@@ -300,6 +341,7 @@ export function transform(root, options = {}) {
 
 	// Group selectors by (basePath, declarations, mediaParams)
 	// Key format: "basePath.join('|')|declSig|mediaParams|null"
+	/** @type {Map<string, {basePath: string[], declarations: import('postcss').Declaration[], mediaParams: string | null}>} */
 	const selectorGroups = new Map();
 
 	// Process all rules to build groups
@@ -314,13 +356,10 @@ export function transform(root, options = {}) {
 		const mediaParams = isInMedia ? rule.parent.params : null;
 
 		// Collect declarations once
+		/** @type {import('postcss').Declaration[]} */
 		const declarations = [];
 		rule.walkDecls((decl) => {
-			declarations.push({
-				prop: decl.prop,
-				value: decl.value,
-				important: decl.important,
-			});
+			declarations.push(decl.clone());
 		});
 
 		const declSig = declarationsSignature(declarations);
@@ -360,14 +399,16 @@ export function transform(root, options = {}) {
 			// No child selector, add declarations directly to base rule
 			if (mediaParams) {
 				let mediaRule = null;
-				for (const node of baseRule.nodes) {
-					if (
-						node.type === "atrule" &&
-						node.name === "media" &&
-						node.params === mediaParams
-					) {
-						mediaRule = node;
-						break;
+				if (baseRule.nodes) {
+					for (const node of baseRule.nodes) {
+						if (
+							node.type === "atrule" &&
+							node.name === "media" &&
+							node.params === mediaParams
+						) {
+							mediaRule = node;
+							break;
+						}
 					}
 				}
 				if (!mediaRule) {
@@ -378,21 +419,13 @@ export function transform(root, options = {}) {
 					baseRule.append(mediaRule);
 				}
 				for (const decl of declarations) {
-					const newDecl = postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					});
+					const newDecl = postcss.decl(decl);
 					newDecl.raws.semicolon = true;
 					mediaRule.prepend(newDecl);
 				}
 			} else {
 				for (const decl of declarations) {
-					const newDecl = postcss.decl({
-						prop: decl.prop,
-						value: decl.value,
-						important: decl.important,
-					});
+					const newDecl = postcss.decl(decl);
 					newDecl.raws.semicolon = true;
 					baseRule.prepend(newDecl);
 				}
@@ -405,14 +438,16 @@ export function transform(root, options = {}) {
 			if (mediaParams) {
 				// Find or create @media rule in base
 				let mediaRule = null;
-				for (const node of baseRule.nodes) {
-					if (
-						node.type === "atrule" &&
-						node.name === "media" &&
-						node.params === mediaParams
-					) {
-						mediaRule = node;
-						break;
+				if (baseRule.nodes) {
+					for (const node of baseRule.nodes) {
+						if (
+							node.type === "atrule" &&
+							node.name === "media" &&
+							node.params === mediaParams
+						) {
+							mediaRule = node;
+							break;
+						}
 					}
 				}
 				if (!mediaRule) {
@@ -429,10 +464,12 @@ export function transform(root, options = {}) {
 
 			// Find existing child rule with same selector
 			let childRule = null;
-			for (const node of targetRule.nodes) {
-				if (node.type === "rule" && node.selector === childSelectorStr) {
-					childRule = node;
-					break;
+			if (targetRule.nodes) {
+				for (const node of targetRule.nodes) {
+					if (node.type === "rule" && node.selector === childSelectorStr) {
+						childRule = node;
+						break;
+					}
 				}
 			}
 
@@ -443,11 +480,7 @@ export function transform(root, options = {}) {
 
 			// Add declarations to child rule
 			for (const decl of declarations) {
-				const newDecl = postcss.decl({
-					prop: decl.prop,
-					value: decl.value,
-					important: decl.important,
-				});
+				const newDecl = postcss.decl(decl);
 				newDecl.raws.semicolon = true;
 				childRule.prepend(newDecl);
 			}
