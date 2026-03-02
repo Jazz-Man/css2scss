@@ -14,14 +14,14 @@ describe("transformSelectorReduce (POC)", () => {
 	}
 
 	describe("comma-separated selectors", () => {
-		test("should handle two simple selectors", () => {
+		test("should handle two simple selectors (grouped)", () => {
 			const decl = postcss.decl({ prop: "color", value: "red" });
 			const result = transformSelectorReduce(".a, .b", { declaration: decl });
 			const scss = toSCSS(result);
 
-			expect(scss).toContain(".a {");
+			// Grouped: .a, .b { ... }
+			expect(scss).toContain(".a, .b");
 			expect(scss).toContain("color: red");
-			expect(scss).toContain(".b {");
 		});
 
 		test("should handle chained + simple", () => {
@@ -128,14 +128,14 @@ describe("transformSelectorReduce (POC)", () => {
 	});
 
 	describe("comma-separated from fixture", () => {
-		test("should handle .a, .b with same declaration", () => {
+		test("should handle .a, .b with same declaration (grouped)", () => {
 			const decl = postcss.decl({ prop: "color", value: "red" });
 			const result = transformSelectorReduce(".a, .b", { declaration: decl });
 			const scss = toSCSS(result);
 
-			expect(scss).toContain(".a {");
+			// Grouped: .a, .b { ... }
+			expect(scss).toContain(".a, .b");
 			expect(scss).toContain("color: red");
-			expect(scss).toContain(".b {");
 		});
 
 		test("should handle .a.b, .c (chained + simple)", () => {

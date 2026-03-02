@@ -7,8 +7,7 @@ const declarations = [
 	postcss.decl({ prop: "height", value: "auto" }),
 	postcss.decl({ prop: "display", value: "block" }),
 ];
-
-const result = transformSelectorReduce(".c, .d:hover", {
+const result = transformSelectorReduce(".test .c, .test .d:hover", {
 	declarations,
 });
 
