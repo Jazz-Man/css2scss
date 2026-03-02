@@ -1,6 +1,7 @@
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import { SelectorTrie } from "./selector-trie.js";
+import { buildStructureGroup, groupByStructure } from "./structure-grouper.js";
 
 /**
  * Check if the LCP path contains any non-space combinators (>, +, ~)
@@ -133,22 +134,9 @@ function buildLCPGroup(group, declarations, root) {
 	}
 
 	// When path is empty, there's no common prefix
-	// Check if selectors have the same structure for aggressive grouping
+	// Use structure-based grouping for selectors with similar patterns
 	if (path.length === 0) {
-		const structureGroups = new Map();
-
-		for (const sel of selectors) {
-			// Build structure key from nodes (excluding first node's value)
-			const structure = sel.nodes
-				.slice(1)
-				.map((n) => n.type)
-				.join("|");
-
-			if (!structureGroups.has(structure)) {
-				structureGroups.set(structure, []);
-			}
-			structureGroups.get(structure).push(sel);
-		}
+		const structureGroups = groupByStructure(selectors);
 
 		// For each structure group, build the nested output
 		for (const group of structureGroups.values()) {
@@ -156,65 +144,13 @@ function buildLCPGroup(group, declarations, root) {
 				// Single selector, use simple path
 				buildSingleSelector(group[0].selector, declarations, root);
 			} else {
-				// Phase 1: Check if template nodes contain non-space combinators
-				const templateNodes = group[0].nodes.slice(1);
-				const hasNonSpaceInTemplate = templateNodes.some(
-					(n) => n.type === "combinator" && n.value !== " ",
-				);
+				// Try to build structure group
+				// Returns false if grouping failed (e.g., non-space combinators)
+				const grouped = buildStructureGroup(group, declarations, root);
 
-				if (hasNonSpaceInTemplate) {
-					// Output as flat selectors since we can't nest non-space combinators
+				if (!grouped) {
+					// Grouping failed, output as flat selectors
 					buildFlatSelectors(group, declarations, root);
-				} else {
-					// Multiple selectors with same structure
-					// Extract first nodes and common structure
-					const firstNodes = group.map((s) => s.nodes[0].value);
-
-					// Create parent rule with comma-separated first nodes
-					const parentRule = postcss.rule({
-						selector: firstNodes.join(", "),
-					});
-					root.append(parentRule);
-
-					// Build nested structure from template nodes
-					let currentRule = parentRule;
-					for (let i = 0; i < templateNodes.length; i++) {
-						const node = templateNodes[i];
-						let ruleSelector;
-
-						// Check if previous node was a space combinator
-						const prevNode = i > 0 ? templateNodes[i - 1] : null;
-						if (
-							prevNode &&
-							prevNode.type === "combinator" &&
-							prevNode.value === " "
-						) {
-							ruleSelector = node.value;
-						} else if (
-							i === 0 ||
-							(prevNode &&
-								prevNode.type === "combinator" &&
-								prevNode.value === " ")
-						) {
-							// First node after parent, or after space combinator
-							if (node.type === "pseudo") {
-								ruleSelector = `&${node.value}`;
-							} else {
-								ruleSelector = node.value;
-							}
-						} else {
-							ruleSelector = `&${node.value}`;
-						}
-
-						const newRule = postcss.rule({ selector: ruleSelector });
-						currentRule.append(newRule);
-						currentRule = newRule;
-					}
-
-					// Add declarations to leaf rule
-					for (const decl of declarations) {
-						currentRule.append(decl.clone());
-					}
 				}
 			}
 		}
