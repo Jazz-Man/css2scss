@@ -35,19 +35,11 @@ jobs:
       - name: Run tests
         run: bun test
 
-      - name: Get new version
+      - name: Bum new version
         id: bump
         run: |
-          # Use GitHub Actions environment variables
-          # GITHUB_SHA: The commit SHA that triggered the workflow
-          # GITHUB_RUN_NUMBER: Unique number for each run of the same workflow
-
-          # Get short commit hash (first 7 characters)
           COMMIT_HASH=${{ github.sha }}
           COMMIT_SHORT=${COMMIT_HASH:0:7}
-
-          # Create new version: 1.0.0-run{run_number}+{commit_short}
-          # Using semver-compatible format with pre-release identifier
           NEW_VERSION="1.0.0-run${{ github.run_number }}+${COMMIT_SHORT}"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
@@ -56,5 +48,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # Publish to GitHub Packages with --tolerate-republish to avoid errors on re-runs
-          bun publish --tolerate-republish --production --tag=${{ steps.bump.outputs.version }} --dry-run
+          bun publish \
+            --tolerate-republish \
+            --production \
+            --tag=${{ steps.bump.outputs.version }}
