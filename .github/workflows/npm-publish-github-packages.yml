@@ -22,8 +22,9 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-          registry-url: https://npm.pkg.github.com
-          scope: '@jazz-man'
+          registries: |
+              https://registry.npmjs.org/
+              @jazz-man:https://npm.pkg.github.com/|$GITHUB_TOKEN
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
