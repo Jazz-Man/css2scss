@@ -48,7 +48,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
+          npm version ${{ steps.bump.outputs.version }} --no-git-tag-version
+
           bun publish \
             --tolerate-republish \
-            --production \
-            --tag=${{ steps.bump.outputs.version }}
+            --production
