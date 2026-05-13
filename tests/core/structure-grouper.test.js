@@ -16,45 +16,45 @@ import {
 describe("structure-grouper", () => {
 	describe("buildStructureKey", () => {
 		test.each([
-			{ nodes: [], expected: "empty", description: "empty nodes" },
+			{ description: "empty nodes", expected: "empty", nodes: [] },
 			{
-				nodes: [{ type: "class", value: ".test" }],
-				expected: "class",
 				description: "single class",
+				expected: "class",
+				nodes: [{ type: "class", value: ".test" }],
 			},
 			{
+				description: "chained classes",
+				expected: "class|class",
 				nodes: [
 					{ type: "class", value: ".a" },
 					{ type: "class", value: ".b" },
 				],
-				expected: "class|class",
-				description: "chained classes",
 			},
 			{
+				description: "pseudo-class",
+				expected: "class|pseudo",
 				nodes: [
 					{ type: "class", value: ".a" },
 					{ type: "pseudo", value: ":hover" },
 				],
-				expected: "class|pseudo",
-				description: "pseudo-class",
 			},
 			{
+				description: "descendant",
+				expected: "class|combinator|class",
 				nodes: [
 					{ type: "class", value: ".a" },
 					{ type: "combinator", value: " " },
 					{ type: "class", value: ".b" },
 				],
-				expected: "class|combinator|class",
-				description: "descendant",
 			},
 			{
+				description: "child combinator",
+				expected: "class|combinator|class",
 				nodes: [
 					{ type: "class", value: ".a" },
 					{ type: "combinator", value: ">" },
 					{ type: "class", value: ".b" },
 				],
-				expected: "class|combinator|class",
-				description: "child combinator",
 			},
 		])("should build key for $description", ({ nodes, expected }) => {
 			expect(buildStructureKey(nodes)).toBe(expected);
@@ -64,11 +64,13 @@ describe("structure-grouper", () => {
 	describe("canGroupTogether", () => {
 		test.each([
 			{
-				selectors: [{ nodes: [{ type: "class", value: ".a" }] }],
-				expected: true,
 				description: "single selector",
+				expected: true,
+				selectors: [{ nodes: [{ type: "class", value: ".a" }] }],
 			},
 			{
+				description: "same structure (class|pseudo)",
+				expected: true,
 				selectors: [
 					{
 						nodes: [
@@ -83,10 +85,10 @@ describe("structure-grouper", () => {
 						],
 					},
 				],
-				expected: true,
-				description: "same structure (class|pseudo)",
 			},
 			{
+				description: "different structure",
+				expected: false,
 				selectors: [
 					{
 						nodes: [
@@ -96,10 +98,10 @@ describe("structure-grouper", () => {
 					},
 					{ nodes: [{ type: "class", value: ".b" }] },
 				],
-				expected: false,
-				description: "different structure",
 			},
 			{
+				description: "same combinator type (different values)",
+				expected: true,
 				selectors: [
 					{
 						nodes: [
@@ -116,10 +118,10 @@ describe("structure-grouper", () => {
 						],
 					},
 				],
-				expected: true,
-				description: "same combinator type (different values)",
 			},
 			{
+				description: "different structure types",
+				expected: false,
 				selectors: [
 					{
 						nodes: [
@@ -135,8 +137,6 @@ describe("structure-grouper", () => {
 						],
 					},
 				],
-				expected: false,
-				description: "different structure types",
 			},
 		])("should return $expected for $description", ({
 			selectors,
@@ -150,20 +150,20 @@ describe("structure-grouper", () => {
 		test("should group selectors by structure", () => {
 			const selectors = [
 				{
-					selector: ".a:hover",
 					nodes: [
 						{ type: "class", value: ".a" },
 						{ type: "pseudo", value: ":hover" },
 					],
+					selector: ".a:hover",
 				},
 				{
-					selector: ".b:focus",
 					nodes: [
 						{ type: "class", value: ".b" },
 						{ type: "pseudo", value: ":focus" },
 					],
+					selector: ".b:focus",
 				},
-				{ selector: ".c", nodes: [{ type: "class", value: ".c" }] },
+				{ nodes: [{ type: "class", value: ".c" }], selector: ".c" },
 			];
 
 			const groups = groupByStructure(selectors);
@@ -185,36 +185,36 @@ describe("structure-grouper", () => {
 		describe("successful grouping", () => {
 			test.each([
 				{
+					expects: [".a, .b", "&:hover, &:focus", "color: red"],
 					group: [
 						{
-							selector: ".a:hover",
 							nodes: [
 								{ type: "class", value: ".a" },
 								{ type: "pseudo", value: ":hover" },
 							],
+							selector: ".a:hover",
 						},
 						{
-							selector: ".b:focus",
 							nodes: [
 								{ type: "class", value: ".b" },
 								{ type: "pseudo", value: ":focus" },
 							],
+							selector: ".b:focus",
 						},
 					],
-					expects: [".a, .b", "&:hover, &:focus", "color: red"],
 				},
 				{
+					expects: [".x, .y", "display: block"],
 					group: [
 						{
-							selector: ".x",
 							nodes: [{ type: "class", value: ".x" }],
+							selector: ".x",
 						},
 						{
-							selector: ".y",
 							nodes: [{ type: "class", value: ".y" }],
+							selector: ".y",
 						},
 					],
-					expects: [".x, .y", "display: block"],
 				},
 			])("should build nested rules", ({ group, expects }) => {
 				const isColorTest = expects.some((e) => e === "color: red");
@@ -253,20 +253,20 @@ describe("structure-grouper", () => {
 			])("should return false for $description", ({ combinator }) => {
 				const group = [
 					{
-						selector: `.a ${combinator} .b`,
 						nodes: [
 							{ type: "class", value: ".a" },
 							{ type: "combinator", value: combinator },
 							{ type: "class", value: ".b" },
 						],
+						selector: `.a ${combinator} .b`,
 					},
 					{
-						selector: `.c ${combinator} .d`,
 						nodes: [
 							{ type: "class", value: ".c" },
 							{ type: "combinator", value: combinator },
 							{ type: "class", value: ".d" },
 						],
+						selector: `.c ${combinator} .d`,
 					},
 				];
 				const declarations = [postcss.decl({ prop: "color", value: "blue" })];
@@ -293,11 +293,11 @@ describe("structure-grouper", () => {
 		test("should handle single selector group", () => {
 			const group = [
 				{
-					selector: ".a:hover",
 					nodes: [
 						{ type: "class", value: ".a" },
 						{ type: "pseudo", value: ":hover" },
 					],
+					selector: ".a:hover",
 				},
 			];
 			const declarations = [postcss.decl({ prop: "color", value: "red" })];

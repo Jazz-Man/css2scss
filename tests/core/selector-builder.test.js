@@ -19,32 +19,32 @@ describe("selector-builder", () => {
 	describe("buildRuleSelector", () => {
 		test.each([
 			{
+				description: "first rule",
+				expected: ".test",
+				isFirst: true,
 				node: { type: "class", value: ".test" },
 				prevNode: null,
-				isFirst: true,
-				expected: ".test",
-				description: "first rule",
 			},
 			{
+				description: "after space combinator",
+				expected: ".child",
+				isFirst: false,
 				node: { type: "class", value: ".child" },
 				prevNode: { type: "combinator", value: " " },
-				isFirst: false,
-				expected: ".child",
-				description: "after space combinator",
 			},
 			{
+				description: "chained pseudo-class",
+				expected: "&:hover",
+				isFirst: false,
 				node: { type: "pseudo", value: ":hover" },
 				prevNode: { type: "class", value: ".parent" },
-				isFirst: false,
-				expected: "&:hover",
-				description: "chained pseudo-class",
 			},
 			{
+				description: "chained class",
+				expected: "&.active",
+				isFirst: false,
 				node: { type: "class", value: ".active" },
 				prevNode: { type: "class", value: ".parent" },
-				isFirst: false,
-				expected: "&.active",
-				description: "chained class",
 			},
 		])("should return $expected for $description", ({
 			node,
@@ -59,26 +59,26 @@ describe("selector-builder", () => {
 	describe("buildFromNodes", () => {
 		test.each([
 			{
+				declaration: { prop: "color", value: "red" },
+				expects: [".parent {", ".child {", "color: red"],
 				nodes: [
 					{ type: "class", value: ".parent" },
 					{ type: "combinator", value: " " },
 					{ type: "class", value: ".child" },
 				],
-				declaration: { prop: "color", value: "red" },
-				expects: [".parent {", ".child {", "color: red"],
 			},
 			{
-				nodes: [{ type: "class", value: ".test" }],
 				declaration: { prop: "width", value: "100px" },
 				expects: [".test {", "width: 100px"],
+				nodes: [{ type: "class", value: ".test" }],
 			},
 			{
+				declaration: { prop: "cursor", value: "pointer" },
+				expects: [".button {", "&:hover {", "cursor: pointer"],
 				nodes: [
 					{ type: "class", value: ".button" },
 					{ type: "pseudo", value: ":hover" },
 				],
-				declaration: { prop: "cursor", value: "pointer" },
-				expects: [".button {", "&:hover {", "cursor: pointer"],
 			},
 		])("should build nested rules", ({ nodes, declaration, expects }) => {
 			const declarations = [postcss.decl(declaration)];
@@ -107,19 +107,19 @@ describe("selector-builder", () => {
 	describe("buildFromPath", () => {
 		test.each([
 			{
+				expects: [".parent {", ".child {"],
 				path: [
 					SelectorTrie.createKey("class", ".parent"),
 					SelectorTrie.createKey("combinator", " "),
 					SelectorTrie.createKey("class", ".child"),
 				],
-				expects: [".parent {", ".child {"],
 			},
 			{
+				expects: [".test {", "&:hover {"],
 				path: [
 					SelectorTrie.createKey("class", ".test"),
 					SelectorTrie.createKey("pseudo", ":hover"),
 				],
-				expects: [".test {", "&:hover {"],
 			},
 		])("should build rules from LCP path", ({ path, expects }) => {
 			const root = postcss.root();
@@ -161,24 +161,24 @@ describe("selector-builder", () => {
 	describe("buildFromTemplate", () => {
 		test.each([
 			{
+				declaration: { prop: "color", value: "blue" },
+				expects: ["&:hover, &:focus", "color: blue"],
 				selectors: [
 					{
-						selector: ".a:hover",
 						nodes: [
 							{ type: "class", value: ".a" },
 							{ type: "pseudo", value: ":hover" },
 						],
+						selector: ".a:hover",
 					},
 					{
-						selector: ".b:focus",
 						nodes: [
 							{ type: "class", value: ".b" },
 							{ type: "pseudo", value: ":focus" },
 						],
+						selector: ".b:focus",
 					},
 				],
-				declaration: { prop: "color", value: "blue" },
-				expects: ["&:hover, &:focus", "color: blue"],
 			},
 		])("should build nested rules from selector group", ({
 			selectors,
@@ -215,73 +215,73 @@ describe("selector-builder", () => {
 	describe("buildSuffixSelectors", () => {
 		test.each([
 			{
+				expected: "&:hover, &:focus",
+				lastPathNodeWasSpaceCombinator: false,
+				pathLength: 1,
 				selectors: [
 					{
-						selector: ".a:hover",
 						nodes: [
 							{ type: "class", value: ".a" },
 							{ type: "pseudo", value: ":hover" },
 						],
+						selector: ".a:hover",
 					},
 					{
-						selector: ".a:focus",
 						nodes: [
 							{ type: "class", value: ".a" },
 							{ type: "pseudo", value: ":focus" },
 						],
+						selector: ".a:focus",
 					},
 				],
-				pathLength: 1,
-				lastPathNodeWasSpaceCombinator: false,
-				expected: "&:hover, &:focus",
 			},
 			{
+				expected: ".a, .b",
+				lastPathNodeWasSpaceCombinator: true,
+				pathLength: 2,
 				selectors: [
 					{
-						selector: ".parent .a",
 						nodes: [
 							{ type: "class", value: ".parent" },
 							{ type: "combinator", value: " " },
 							{ type: "class", value: ".a" },
 						],
+						selector: ".parent .a",
 					},
 					{
-						selector: ".parent .b",
 						nodes: [
 							{ type: "class", value: ".parent" },
 							{ type: "combinator", value: " " },
 							{ type: "class", value: ".b" },
 						],
+						selector: ".parent .b",
 					},
 				],
-				pathLength: 2,
-				lastPathNodeWasSpaceCombinator: true,
-				expected: ".a, .b",
 			},
 			{
+				expected: "&:hover, &:active",
+				lastPathNodeWasSpaceCombinator: false,
+				pathLength: 3,
 				selectors: [
 					{
-						selector: ".test .a:hover",
 						nodes: [
 							{ type: "class", value: ".test" },
 							{ type: "combinator", value: " " },
 							{ type: "class", value: ".a" },
 							{ type: "pseudo", value: ":hover" },
 						],
+						selector: ".test .a:hover",
 					},
 					{
-						selector: ".test .a:active",
 						nodes: [
 							{ type: "class", value: ".test" },
 							{ type: "combinator", value: " " },
 							{ type: "class", value: ".a" },
 							{ type: "pseudo", value: ":active" },
 						],
+						selector: ".test .a:active",
 					},
 				],
-				pathLength: 3,
-				lastPathNodeWasSpaceCombinator: false,
-				expected: "&:hover, &:active",
 			},
 		])("should build suffix selectors correctly", ({
 			selectors,

@@ -88,9 +88,29 @@ export function assertNestingStructure(scss, ...selectors) {
  * Selector test cases for common patterns
  */
 export const selectorFixtures = {
-	// Simple selectors
-	simpleClasses: [".a", ".b", ".c"],
+	adjacentSibling: [".header + .content", ".h1 + .p"],
+
+	// Attributes
+	attributes: [
+		"[type='text']",
+		'[data-foo="bar"]',
+		'[href^="https://"]',
+		'[class*="icon-"]',
+	],
+
+	// Real-world patterns
+	bem: [".block", ".block__element", ".block--modifier"],
 	chainedClasses: [".a.b", ".x.y", ".foo.bar"],
+
+	// Combinators
+	childCombinators: [".parent > .child", ".nav > .item"],
+
+	// Complex nesting
+	deepNesting: [".a .b .c .d .e", ".one .two .three .four:hover"],
+	generalSibling: [".section ~ .footer"],
+
+	// :not() pseudo
+	notSelectors: [":not(.excluded)", ":not([disabled])", ":not(.a, .b)"],
 
 	// Pseudo-classes
 	pseudoClasses: [
@@ -102,30 +122,10 @@ export const selectorFixtures = {
 
 	// Pseudo-elements
 	pseudoElements: [".icon::before", ".icon::after", ".a.b::before"],
-
-	// Combinators
-	childCombinators: [".parent > .child", ".nav > .item"],
-	adjacentSibling: [".header + .content", ".h1 + .p"],
-	generalSibling: [".section ~ .footer"],
-
-	// Attributes
-	attributes: [
-		"[type='text']",
-		'[data-foo="bar"]',
-		'[href^="https://"]',
-		'[class*="icon-"]',
-	],
-
-	// :not() pseudo
-	notSelectors: [":not(.excluded)", ":not([disabled])", ":not(.a, .b)"],
-
-	// Complex nesting
-	deepNesting: [".a .b .c .d .e", ".one .two .three .four:hover"],
-
-	// Real-world patterns
-	bem: [".block", ".block__element", ".block--modifier"],
-	utility: [".flex", ".items-center", ".justify-between"],
+	// Simple selectors
+	simpleClasses: [".a", ".b", ".c"],
 	state: [".btn:hover", ".btn:focus", ".btn:active"],
+	utility: [".flex", ".items-center", ".justify-between"],
 };
 
 /**

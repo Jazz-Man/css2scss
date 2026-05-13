@@ -12,7 +12,7 @@ describe("file utils", () => {
 	});
 
 	afterEach(async () => {
-		await rm(tempDir, { recursive: true, force: true });
+		await rm(tempDir, { force: true, recursive: true });
 	});
 
 	describe("readFile", () => {

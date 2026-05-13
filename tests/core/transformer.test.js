@@ -17,22 +17,22 @@ describe("transformSelectorReduce", () => {
 	describe("comma-separated selectors", () => {
 		test.each([
 			{
-				selector: ".a, .b",
-				prop: "color",
-				value: "red",
 				expects: [".a, .b", "color: red"],
+				prop: "color",
+				selector: ".a, .b",
+				value: "red",
 			},
 			{
-				selector: ".a.b, .c",
-				prop: "width",
-				value: "100px",
 				expects: [".a {", "&.b {", ".c {"],
+				prop: "width",
+				selector: ".a.b, .c",
+				value: "100px",
 			},
 			{
-				selector: ".a, .b.c, .d:hover",
-				prop: "display",
-				value: "block",
 				expects: [".a {", ".b {", "&.c {", ".d {", "&:hover {"],
+				prop: "display",
+				selector: ".a, .b.c, .d:hover",
+				value: "block",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const scss = transformToSCSS(
@@ -49,16 +49,16 @@ describe("transformSelectorReduce", () => {
 	describe("chained classes", () => {
 		test.each([
 			{
-				selector: ".a.b",
 				prop: "color",
-				value: "blue",
 				regex: /\.a \{[\s\S]*&\.b \{/,
+				selector: ".a.b",
+				value: "blue",
 			},
 			{
-				selector: ".a.b.c",
 				prop: "font-size",
-				value: "16px",
 				regex: /\.a \{[\s\S]*&\.b \{[\s\S]*&\.c \{/,
+				selector: ".a.b.c",
+				value: "16px",
 			},
 		])("should nest $selector", ({ selector, prop, value, regex }) => {
 			const scss = transformToSCSS(
@@ -74,16 +74,16 @@ describe("transformSelectorReduce", () => {
 	describe("descendants", () => {
 		test.each([
 			{
-				selector: ".a .b",
-				prop: "margin",
-				value: "0",
 				expects: [".a {", ".b {"],
+				prop: "margin",
+				selector: ".a .b",
+				value: "0",
 			},
 			{
-				selector: ".x .y .z",
-				prop: "padding",
-				value: "5px",
 				expects: [".x {", ".y {", ".z {"],
+				prop: "padding",
+				selector: ".x .y .z",
+				value: "5px",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const scss = transformToSCSS(
@@ -99,9 +99,9 @@ describe("transformSelectorReduce", () => {
 
 	describe("pseudo-classes", () => {
 		test.each([
-			{ selector: ".a:hover", expects: [".a {", "&:hover {"] },
-			{ selector: ".btn:active", expects: [".btn {", "&:active {"] },
-			{ selector: ".link:focus", expects: [".link {", "&:focus {"] },
+			{ expects: [".a {", "&:hover {"], selector: ".a:hover" },
+			{ expects: [".btn {", "&:active {"], selector: ".btn:active" },
+			{ expects: [".link {", "&:focus {"], selector: ".link:focus" },
 		])("should handle $selector", ({ selector, expects }) => {
 			const scss = transformToSCSS(
 				selector,
@@ -117,20 +117,20 @@ describe("transformSelectorReduce", () => {
 	describe("complex selectors from article-card.css", () => {
 		test.each([
 			{
-				selector: ".ArticleCard_card:hover",
 				expects: [".ArticleCard_card {", "&:hover {"],
+				selector: ".ArticleCard_card:hover",
 			},
 			{
-				selector: ".ArticleCard_card:hover .ArticleCard_category",
 				expects: [
 					".ArticleCard_card {",
 					"&:hover {",
 					".ArticleCard_category {",
 				],
+				selector: ".ArticleCard_card:hover .ArticleCard_category",
 			},
 			{
-				selector: ".light-mode .ArticleCard_card",
 				expects: [".light-mode {", ".ArticleCard_card {"],
+				selector: ".light-mode .ArticleCard_card",
 			},
 		])("should handle $selector", ({ selector, expects }) => {
 			const scss = transformToSCSS(
@@ -146,11 +146,11 @@ describe("transformSelectorReduce", () => {
 
 	describe("comma-separated from fixture", () => {
 		test.each([
-			{ selector: ".a, .b", expects: [".a, .b"] },
-			{ selector: ".a.b, .c", expects: [".a {", "&.b {", ".c {"] },
+			{ expects: [".a, .b"], selector: ".a, .b" },
+			{ expects: [".a {", "&.b {", ".c {"], selector: ".a.b, .c" },
 			{
-				selector: ".test, .item:hover, .link.active",
 				expects: [".test {", ".item {", "&:hover {", ".link {", "&.active {"],
+				selector: ".test, .item:hover, .link.active",
 			},
 		])("should handle $selector", ({ selector, expects }) => {
 			const scss = transformToSCSS(
@@ -167,21 +167,21 @@ describe("transformSelectorReduce", () => {
 	describe("multiple declarations per rule", () => {
 		test.each([
 			{
-				selector: ".a.b",
 				declarations: [
 					{ prop: "color", value: "blue" },
 					{ prop: "background", value: "white" },
 				],
 				expects: [".a {", "&.b {", "color: blue", "background: white"],
+				selector: ".a.b",
 			},
 			{
-				selector: ".c, .d:hover",
 				declarations: [
 					{ prop: "width", value: "100%" },
 					{ prop: "height", value: "auto" },
 					{ prop: "display", value: "block" },
 				],
 				expects: ["width: 100%", "height: auto", "display: block"],
+				selector: ".c, .d:hover",
 			},
 		])("should handle $selector with multiple declarations", ({
 			selector,
@@ -201,11 +201,11 @@ describe("transformSelectorReduce", () => {
 	describe("transformRule function", () => {
 		test("should transform a PostCSS Rule with multiple declarations", () => {
 			const rule = postcss.rule({
-				selector: ".a.b",
 				nodes: [
 					postcss.decl({ prop: "color", value: "blue" }),
 					postcss.decl({ prop: "background", value: "white" }),
 				],
+				selector: ".a.b",
 			});
 			const result = transformRule(rule);
 			const scss = toSCSS(result);
@@ -220,7 +220,6 @@ describe("transformSelectorReduce", () => {
 	describe("transformCSS function (from fixture files)", () => {
 		test.each([
 			{
-				name: "multiple-declarations",
 				css: `
 				.a.b {
 					color: blue;
@@ -234,22 +233,23 @@ describe("transformSelectorReduce", () => {
 					"background: white",
 					"padding: 10px",
 				],
+				name: "multiple-declarations",
 			},
 			{
-				name: "comma-separated",
 				css: `
 				.a, .b {
 					color: red;
 				}`,
 				expects: [".a, .b", "color: red"],
+				name: "comma-separated",
 			},
 			{
-				name: "nested-descendants",
 				css: `
 				.test .c, .test .d:hover {
 					color: red;
 				}`,
 				expects: [".test {", ".c, .d:hover"],
+				name: "nested-descendants",
 			},
 		])("should transform $name fixture", ({ css, expects }) => {
 			const result = transformCSS(css);
@@ -261,9 +261,9 @@ describe("transformSelectorReduce", () => {
 
 	describe("combinators (> + ~)", () => {
 		test.each([
-			{ selector: "#main > .content", expects: ["#main > .content"] },
-			{ selector: ".header + .content", expects: [".header + .content"] },
-			{ selector: ".section ~ .footer", expects: [".section ~ .footer"] },
+			{ expects: ["#main > .content"], selector: "#main > .content" },
+			{ expects: [".header + .content"], selector: ".header + .content" },
+			{ expects: [".section ~ .footer"], selector: ".section ~ .footer" },
 		])("should handle $selector as flat output", ({ selector, expects }) => {
 			const result = transformSelectorReduce(selector, {
 				declaration: decl("display", "block"),
@@ -277,9 +277,9 @@ describe("transformSelectorReduce", () => {
 
 	describe("attribute selectors", () => {
 		test.each([
-			{ selector: '[type="text"]', expects: ['[type="text"]'] },
-			{ selector: '[data-foo="bar"]', expects: ['[data-foo="bar"]'] },
-			{ selector: '[href^="https://"]', expects: ['[href^="https://"]'] },
+			{ expects: ['[type="text"]'], selector: '[type="text"]' },
+			{ expects: ['[data-foo="bar"]'], selector: '[data-foo="bar"]' },
+			{ expects: ['[href^="https://"]'], selector: '[href^="https://"]' },
 		])("should handle $selector", ({ selector, expects }) => {
 			const result = transformSelectorReduce(selector, {
 				declaration: decl("display", "block"),
@@ -293,11 +293,11 @@ describe("transformSelectorReduce", () => {
 
 	describe(":not() pseudo-class", () => {
 		test.each([
-			{ selector: ":not(.excluded)", expects: [":not(.excluded)"] },
-			{ selector: ":not([disabled])", expects: [":not([disabled])"] },
+			{ expects: [":not(.excluded)"], selector: ":not(.excluded)" },
+			{ expects: [":not([disabled])"], selector: ":not([disabled])" },
 			{
-				selector: ':not([href^="https://"])',
 				expects: [':not([href^="https://"])'],
+				selector: ':not([href^="https://"])',
 			},
 		])("should handle $selector", ({ selector, expects }) => {
 			const result = transformSelectorReduce(selector, {
@@ -312,9 +312,9 @@ describe("transformSelectorReduce", () => {
 
 	describe("pseudo-elements", () => {
 		test.each([
-			{ selector: ".icon::before", expects: [".icon {", "&::before {"] },
-			{ selector: ".icon::after", expects: [".icon {", "&::after {"] },
-			{ selector: ".a.b::before", expects: [".a {", "&.b", "&::before"] },
+			{ expects: [".icon {", "&::before {"], selector: ".icon::before" },
+			{ expects: [".icon {", "&::after {"], selector: ".icon::after" },
+			{ expects: [".a {", "&.b", "&::before"], selector: ".a.b::before" },
 		])("should handle $selector", ({ selector, expects }) => {
 			const scss = transformToSCSS(
 				selector,
@@ -329,8 +329,8 @@ describe("transformSelectorReduce", () => {
 
 	describe("error handling", () => {
 		test.each([
-			{ selector: "", description: "empty string" },
-			{ selector: "   ", description: "whitespace only" },
+			{ description: "empty string", selector: "" },
+			{ description: "whitespace only", selector: "   " },
 		])("should throw on $description", ({ selector }) => {
 			expect(() =>
 				transformSelectorReduce(selector, {

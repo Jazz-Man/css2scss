@@ -29,29 +29,28 @@ describe("SelectorTrieNode", () => {
 describe("SelectorTrie.parseSelector", () => {
 	const parseCases = [
 		{
-			selector: ".test",
 			expectedLength: 1,
 			expectedNodes: [{ type: "class", value: ".test" }],
+			selector: ".test",
 		},
 		{
-			selector: ".test .c",
 			expectedLength: 3,
 			expectedNodes: [
 				{ type: "class", value: ".test" },
 				{ type: "combinator", value: " " },
 				{ type: "class", value: ".c" },
 			],
+			selector: ".test .c",
 		},
 		{
-			selector: ".test:hover",
 			expectedLength: 2,
 			expectedNodes: [
 				{ type: "class", value: ".test" },
 				{ type: "pseudo", value: ":hover" },
 			],
+			selector: ".test:hover",
 		},
 		{
-			selector: ".test .d:hover",
 			expectedLength: 4,
 			expectedNodes: [
 				{ type: "class", value: ".test" },
@@ -59,21 +58,22 @@ describe("SelectorTrie.parseSelector", () => {
 				{ type: "class", value: ".d" },
 				{ type: "pseudo", value: ":hover" },
 			],
+			selector: ".test .d:hover",
 		},
 		{
-			selector: "#test",
 			expectedLength: 1,
 			expectedNodes: [{ type: "id", value: "#test" }],
+			selector: "#test",
 		},
 		{
-			selector: "div",
 			expectedLength: 1,
 			expectedNodes: [{ type: "tag", value: "div" }],
+			selector: "div",
 		},
 		{
-			selector: '[type="text"]',
 			expectedLength: 1,
 			expectedNodes: [{ type: "attribute", value: '[type="text"]' }],
+			selector: '[type="text"]',
 		},
 	];
 
@@ -95,9 +95,9 @@ describe("SelectorTrie.parseSelector", () => {
 describe("SelectorTrie.createKey and parseKey", () => {
 	describe("createKey - unique keys", () => {
 		test.each([
-			{ type1: "class", value1: ".test", type2: "class", value2: ".other" },
-			{ type1: "class", value1: ".test", type2: "pseudo", value2: ":hover" },
-			{ type1: "pseudo", value1: ":hover", type2: "class", value2: ".test" },
+			{ type1: "class", type2: "class", value1: ".test", value2: ".other" },
+			{ type1: "class", type2: "pseudo", value1: ".test", value2: ":hover" },
+			{ type1: "pseudo", type2: "class", value1: ":hover", value2: ".test" },
 		])("should create unique keys for $type1:$value1 vs $type2:$value2", ({
 			type1,
 			value1,
@@ -139,9 +139,9 @@ describe("SelectorTrie.createKey and parseKey", () => {
 
 describe("SelectorTrie.insert", () => {
 	test.each([
-		{ selector: ".test", expectedCount: 1 },
-		{ selector: ".test .c", expectedCount: 1 },
-		{ selector: ".a.b.c", expectedCount: 1 },
+		{ expectedCount: 1, selector: ".test" },
+		{ expectedCount: 1, selector: ".test .c" },
+		{ expectedCount: 1, selector: ".a.b.c" },
 	])("should insert $selector", ({ selector, expectedCount }) => {
 		const trie = new SelectorTrie();
 		trie.insert(selector);
@@ -197,9 +197,9 @@ describe("SelectorTrie.insert", () => {
 
 describe("SelectorTrie._countSelectors", () => {
 	test.each([
-		{ selectors: [".test .c", ".test .d:hover"], expectedCount: 2 },
-		{ selectors: [".test .c", ".other .x"], atNode: ".test", expectedCount: 1 },
-		{ selectors: [".a", ".b", ".c"], expectedCount: 3 },
+		{ expectedCount: 2, selectors: [".test .c", ".test .d:hover"] },
+		{ atNode: ".test", expectedCount: 1, selectors: [".test .c", ".other .x"] },
+		{ expectedCount: 3, selectors: [".a", ".b", ".c"] },
 	])("should count selectors correctly", ({
 		selectors,
 		expectedCount,
@@ -222,29 +222,29 @@ describe("SelectorTrie._countSelectors", () => {
 describe("SelectorTrie.findLCP", () => {
 	test.each([
 		{
-			selectors: [".test .c", ".test .d:hover"],
 			description: "common prefix",
 			expectedPathLength: 2, // .test + space
+			selectors: [".test .c", ".test .d:hover"],
 		},
 		{
-			selectors: [".test", ".other"],
 			description: "no common prefix",
 			isRoot: true,
+			selectors: [".test", ".other"],
 		},
 		{
-			selectors: [".a.b", ".a.c"],
 			description: "chained classes",
 			expectedPathLength: 1, // .a
+			selectors: [".a.b", ".a.c"],
 		},
 		{
-			selectors: [".a:hover", ".a:focus"],
 			description: "pseudo-classes with same base",
 			expectedPathLength: 1, // .a
+			selectors: [".a:hover", ".a:focus"],
 		},
 		{
-			selectors: [".test .c", ".test .c"],
 			description: "identical selectors",
 			nonTerminal: true,
+			selectors: [".test .c", ".test .c"],
 		},
 	])("should find LCP for $description", ({
 		selectors,
@@ -279,19 +279,19 @@ describe("SelectorTrie.findLCP", () => {
 describe("SelectorTrie.getPath", () => {
 	test.each([
 		{
+			expectedPath: [],
 			selector: ".test",
 			target: "root",
-			expectedPath: [],
 		},
 		{
+			expectedPath: ["class", ".test"],
 			selector: ".test .c",
 			target: ".test",
-			expectedPath: ["class", ".test"],
 		},
 		{
+			expectedPath: ["class", ".test", "combinator", " ", "class", ".c"],
 			selector: ".test .c",
 			target: "terminal",
-			expectedPath: ["class", ".test", "combinator", " ", "class", ".c"],
 		},
 	])("should return path for $target", ({ selector, target, expectedPath }) => {
 		const trie = new SelectorTrie();
@@ -326,20 +326,20 @@ describe("SelectorTrie.getPath", () => {
 describe("SelectorTrie.getGroups", () => {
 	test.each([
 		{
-			selectors: [".test .c", ".test .d:hover"],
 			description: "with common prefix",
 			expectedGroups: 1,
+			selectors: [".test .c", ".test .d:hover"],
 		},
 		{
-			selectors: [".test", ".other"],
 			description: "no common prefix",
 			expectedGroups: 1,
 			hasRootKey: true,
+			selectors: [".test", ".other"],
 		},
 		{
-			selectors: [".test"],
 			description: "single selector",
 			expectedGroups: 1,
+			selectors: [".test"],
 		},
 	])("should group selectors for $description", ({
 		selectors,

@@ -15,28 +15,28 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Universal selector (*)", () => {
 		test.each([
 			{
-				selector: "*",
-				prop: "margin",
-				value: "0",
 				expects: ["* {", "margin: 0"],
+				prop: "margin",
+				selector: "*",
+				value: "0",
 			},
 			{
-				selector: ".container *",
-				prop: "padding",
-				value: "10px",
 				expects: [".container {", "* {", "padding: 10px"],
+				prop: "padding",
+				selector: ".container *",
+				value: "10px",
 			},
 			{
-				selector: "*:hover",
-				prop: "display",
-				value: "block",
 				expects: ["* {", "&:hover", "display: block"],
+				prop: "display",
+				selector: "*:hover",
+				value: "block",
 			},
 			{
-				selector: "*:hover, *:focus",
-				prop: "color",
-				value: "red",
 				expects: ["* {", "&:hover, &:focus"],
+				prop: "color",
+				selector: "*:hover, *:focus",
+				value: "red",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const result = transformSelectorReduce(selector, {
@@ -62,16 +62,16 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Multiple pseudo-classes", () => {
 		test.each([
 			{
-				selector: ".button:hover:focus",
-				prop: "opacity",
-				value: "0.5",
 				expects: [".button {", "&:hover {", "&:focus {"],
+				prop: "opacity",
+				selector: ".button:hover:focus",
+				value: "0.5",
 			},
 			{
-				selector: ".a:hover:focus, .b:hover:active",
-				prop: "cursor",
-				value: "pointer",
 				expects: [".a, .b", "&:hover"],
+				prop: "cursor",
+				selector: ".a:hover:focus, .b:hover:active",
+				value: "pointer",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const scss = transformToSCSS(
@@ -88,22 +88,22 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Complex attribute selectors", () => {
 		test.each([
 			{
-				selector: '[data-foo][data-bar="baz"]',
-				prop: "border",
-				value: "1px solid red",
 				expects: ["[data-foo]", '[data-bar="baz"]'],
+				prop: "border",
+				selector: '[data-foo][data-bar="baz"]',
+				value: "1px solid red",
 			},
 			{
-				selector: ":not([data-hidden])",
-				prop: "display",
-				value: "none",
 				expects: [":not([data-hidden])"],
+				prop: "display",
+				selector: ":not([data-hidden])",
+				value: "none",
 			},
 			{
-				selector: '[data-url^="https://example.com/path"]',
-				prop: "content",
-				value: '""',
 				expects: ['[data-url^="https://example.com/path"]'],
+				prop: "content",
+				selector: '[data-url^="https://example.com/path"]',
+				value: '""',
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const result = transformSelectorReduce(selector, {
@@ -119,16 +119,16 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Deep nesting levels", () => {
 		test.each([
 			{
-				selector: ".a .b .c .d .e",
-				prop: "color",
-				value: "blue",
 				expects: [".a {", ".b {", ".c {", ".d {", ".e {"],
+				prop: "color",
+				selector: ".a .b .c .d .e",
+				value: "blue",
 			},
 			{
-				selector: ".one .two .three .four:hover",
-				prop: "opacity",
-				value: "1",
 				expects: [".one {", ".two {", ".three {", ".four {", "&:hover"],
+				prop: "opacity",
+				selector: ".one .two .three .four:hover",
+				value: "1",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const scss = transformToSCSS(
@@ -145,22 +145,22 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Chained classes with pseudo-elements", () => {
 		test.each([
 			{
-				selector: ".a.b::before",
-				prop: "content",
-				value: '"x"',
 				expects: [".a {", "&.b", "&::before"],
-			},
-			{
-				selector: ".a.b.c::after",
 				prop: "content",
-				value: '"y"',
-				expects: [".a {", "&.b", "&.c", "&::after"],
+				selector: ".a.b::before",
+				value: '"x"',
 			},
 			{
-				selector: ".a.b::before, .c.d::after",
-				prop: "opacity",
-				value: "0.8",
+				expects: [".a {", "&.b", "&.c", "&::after"],
+				prop: "content",
+				selector: ".a.b.c::after",
+				value: '"y"',
+			},
+			{
 				expects: [".a, .c", "&.b, &.d", "&::before, &::after"],
+				prop: "opacity",
+				selector: ".a.b::before, .c.d::after",
+				value: "0.8",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const scss = transformToSCSS(
@@ -177,25 +177,25 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("ID selectors with combinators", () => {
 		test.each([
 			{
-				selector: "#main > .content",
-				prop: "width",
-				value: "100%",
-				flat: true,
 				expects: ["#main > .content"],
-			},
-			{
-				selector: "#main + .sidebar",
-				prop: "float",
-				value: "left",
 				flat: true,
-				expects: ["#main + .sidebar"],
+				prop: "width",
+				selector: "#main > .content",
+				value: "100%",
 			},
 			{
-				selector: "#container .item",
-				prop: "flex",
-				value: "1",
-				flat: false,
+				expects: ["#main + .sidebar"],
+				flat: true,
+				prop: "float",
+				selector: "#main + .sidebar",
+				value: "left",
+			},
+			{
 				expects: ["#container {", ".item {"],
+				flat: false,
+				prop: "flex",
+				selector: "#container .item",
+				value: "1",
 			},
 		])("should handle $selector", ({
 			selector,
@@ -217,25 +217,25 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Mixed selector types", () => {
 		test.each([
 			{
-				selector: "div.highlight",
-				prop: "display",
-				value: "inline",
-				flat: true,
 				expects: ["div {", "&.highlight"],
+				flat: true,
+				prop: "display",
+				selector: "div.highlight",
+				value: "inline",
 			},
 			{
-				selector: "header#main",
-				prop: "position",
-				value: "absolute",
-				flat: false,
 				expects: ["header {", "&#main"],
+				flat: false,
+				prop: "position",
+				selector: "header#main",
+				value: "absolute",
 			},
 			{
-				selector: "a.link:hover",
-				prop: "cursor",
-				value: "pointer",
-				flat: false,
 				expects: ["a {", "&.link", "&:hover"],
+				flat: false,
+				prop: "cursor",
+				selector: "a.link:hover",
+				value: "pointer",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const result = transformSelectorReduce(selector, {
@@ -251,17 +251,17 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe(":not() with combinators", () => {
 		test.each([
 			{
-				selector: ":not(.parent) .child",
-				prop: "color",
-				value: "red",
 				expects: [":not(.parent) {", ".child {"],
+				prop: "color",
+				selector: ":not(.parent) .child",
+				value: "red",
 			},
 			{
-				selector: ".container > :not(.excluded)",
-				prop: "margin",
-				value: "0",
-				flat: true,
 				expects: [".container > :not(.excluded)"],
+				flat: true,
+				prop: "margin",
+				selector: ".container > :not(.excluded)",
+				value: "0",
 			},
 		])("should handle $selector", ({
 			selector,
@@ -313,30 +313,30 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Real-world patterns", () => {
 		test.each([
 			{
-				selector: ".block__element, .block--modifier",
-				prop: "display",
-				value: "flex",
-				flat: true,
 				expects: [".block__element, .block--modifier {"],
-			},
-			{
-				selector: ".flex, .items-center, .justify-between",
-				prop: "display",
-				value: "flex",
 				flat: true,
+				prop: "display",
+				selector: ".block__element, .block--modifier",
+				value: "flex",
+			},
+			{
 				expects: [".flex, .items-center, .justify-between {"],
+				flat: true,
+				prop: "display",
+				selector: ".flex, .items-center, .justify-between",
+				value: "flex",
 			},
 			{
-				selector: ".btn:hover, .btn:focus, .btn:active",
-				prop: "color",
-				value: "red",
 				expects: [".btn {", "&:hover, &:focus, &:active"],
+				prop: "color",
+				selector: ".btn:hover, .btn:focus, .btn:active",
+				value: "red",
 			},
 			{
-				selector: ".card:hover .title, .card:focus .title",
-				prop: "opacity",
-				value: "0.8",
 				expects: [".card {", ".title {"],
+				prop: "opacity",
+				selector: ".card:hover .title, .card:focus .title",
+				value: "0.8",
 			},
 		])("should handle $selector", ({
 			selector,
@@ -365,16 +365,16 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 
 		test.each([
 			{
-				selector: ".a  .b",
-				prop: "color",
-				value: "blue",
 				expects: [".a {", ".b {"],
+				prop: "color",
+				selector: ".a  .b",
+				value: "blue",
 			},
 			{
-				selector: ".a\t.b",
-				prop: "padding",
-				value: "0",
 				expects: [".a", ".b"],
+				prop: "padding",
+				selector: ".a\t.b",
+				value: "0",
 			},
 		])("should handle whitespace variations", ({
 			selector,
@@ -397,28 +397,28 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Attribute selector edge cases", () => {
 		test.each([
 			{
-				selector: "[type='text']",
-				prop: "content",
-				value: "''",
 				expects: ["[type='text']"],
+				prop: "content",
+				selector: "[type='text']",
+				value: "''",
 			},
 			{
-				selector: "[disabled]",
-				prop: "display",
-				value: "none",
 				expects: ["[disabled]"],
+				prop: "display",
+				selector: "[disabled]",
+				value: "none",
 			},
 			{
-				selector: '[class*="icon-"]',
-				prop: "color",
-				value: "green",
 				expects: ['[class*="icon-"]'],
+				prop: "color",
+				selector: '[class*="icon-"]',
+				value: "green",
 			},
 			{
-				selector: '[class$="-btn"]',
-				prop: "font-weight",
-				value: "bold",
 				expects: ['[class$="-btn"]'],
+				prop: "font-weight",
+				selector: '[class$="-btn"]',
+				value: "bold",
 			},
 		])("should handle $selector", ({ selector, prop, value, expects }) => {
 			const result = transformSelectorReduce(selector, {
@@ -434,36 +434,36 @@ describe("Edge Cases - Comprehensive Coverage", () => {
 	describe("Pseudo-class edge cases", () => {
 		test.each([
 			{
-				selector: ".item:first-child",
-				prop: "margin-top",
-				value: "0",
 				expects: [".item {", "&:first-child {"],
+				prop: "margin-top",
+				selector: ".item:first-child",
+				value: "0",
 			},
 			{
-				selector: "li:nth-child(2n)",
-				prop: "background",
-				value: "gray",
 				expects: ["li {", "&:nth-child(2n) {"],
+				prop: "background",
+				selector: "li:nth-child(2n)",
+				value: "gray",
 			},
 			{
-				selector: ".container:has(.sidebar)",
-				prop: "display",
-				value: "grid",
 				expects: [".container {", "&:has(.sidebar) {"],
+				prop: "display",
+				selector: ".container:has(.sidebar)",
+				value: "grid",
 			},
 			{
-				selector: ":is(.a, .b, .c)",
-				prop: "color",
-				value: "red",
-				flat: true,
 				expects: [":is(.a, .b, .c)"],
+				flat: true,
+				prop: "color",
+				selector: ":is(.a, .b, .c)",
+				value: "red",
 			},
 			{
-				selector: ":where(.a, .b)",
-				prop: "opacity",
-				value: "0.5",
-				flat: true,
 				expects: [":where(.a, .b)"],
+				flat: true,
+				prop: "opacity",
+				selector: ":where(.a, .b)",
+				value: "0.5",
 			},
 		])("should handle $selector", ({
 			selector,
