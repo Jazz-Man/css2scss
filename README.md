@@ -20,12 +20,24 @@
 
 ## Installation
 
+This package is published to [GitHub Packages](https://npm.pkg.github.com), not the public npm registry.
+
+### Configure `.npmrc`
+
+Add this line to your project's `.npmrc` (or `~/.npmrc` for global access):
+
+```
+@jazz-man:registry=https://npm.pkg.github.com
+```
+
+### Install
+
 ```bash
+# Install as a dependency
+npm install @jazz-man/css2scss
+
 # Install globally
 npm install -g @jazz-man/css2scss
-
-# Or use directly with npx
-npx @jazz-man/css2scss input.css output.scss
 ```
 
 ## Usage

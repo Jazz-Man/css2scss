@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-css2scss - CLI utility that converts flat CSS to nested SCSS using an LCP (Longest Common Prefix) trie-based approach. 100% data preservation guarantee.
+css2scss - CLI utility that converts flat CSS to nested SCSS using an LCP (Longest Common Prefix) trie-based approach. 100% data preservation guarantee. Published to GitHub Packages (`npm.pkg.github.com`), not the public npm registry.
 
 ## Commands
 
