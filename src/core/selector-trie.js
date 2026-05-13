@@ -38,10 +38,10 @@ export const KEY_DELIMITER = "\x1F";
  * CSS Combinator values
  */
 export const COMBINATORS = {
-	SPACE: " ",
-	CHILD: ">",
 	ADJACENT_SIBLING: "+",
+	CHILD: ">",
 	GENERAL_SIBLING: "~",
+	SPACE: " ",
 };
 
 /**
@@ -99,9 +99,9 @@ export class SelectorTrie {
 			selectors.each((sel) => {
 				sel.each((node) => {
 					nodes.push({
+						raw: node,
 						type: node.type,
 						value: node.toString(),
-						raw: node,
 					});
 				});
 			});
@@ -168,7 +168,7 @@ export class SelectorTrie {
 		}
 
 		// Store selector ONLY at terminal node to reduce memory overhead
-		current.selectors.push({ selector, nodes });
+		current.selectors.push({ nodes, selector });
 		current.isTerminal = true;
 		this.selectorCount++;
 	}
@@ -336,9 +336,9 @@ export class SelectorTrie {
 			// No common prefix, return all selectors in one group
 			const allSelectors = this._getAllSelectors();
 			groups.set("root", {
-				selectors: allSelectors,
 				lcpNode: this.root,
 				path: [],
+				selectors: allSelectors,
 			});
 			return groups;
 		}
@@ -351,9 +351,9 @@ export class SelectorTrie {
 		this._collectSelectors(lcpNode, divergentSelectors, new Set());
 
 		groups.set(lcpPath.join("|"), {
-			selectors: divergentSelectors,
 			lcpNode,
 			path: lcpPath,
+			selectors: divergentSelectors,
 		});
 
 		return groups;

@@ -95,6 +95,6 @@ export async function convertDirectory(inputDir, outputDir, options = {}) {
 
 export default {
 	convertCSS,
-	convertFile,
 	convertDirectory,
+	convertFile,
 };

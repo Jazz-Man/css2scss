@@ -256,10 +256,10 @@ function buildLCP(group, declarations, root) {
  * @type {ReadonlyArray<GroupingStrategy>}
  */
 const strategies = Object.freeze([
-	{ canHandle: canHandleSingle, build: buildSingle },
-	{ canHandle: canHandleFlat, build: buildFlat },
-	{ canHandle: canHandleStructure, build: buildStructure },
-	{ canHandle: canHandleLCP, build: buildLCP },
+	{ build: buildSingle, canHandle: canHandleSingle },
+	{ build: buildFlat, canHandle: canHandleFlat },
+	{ build: buildStructure, canHandle: canHandleStructure },
+	{ build: buildLCP, canHandle: canHandleLCP },
 ]);
 
 /**
