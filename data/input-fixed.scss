@@ -1,0 +1,137 @@
+@keyframes MiniLoader_color {
+  0%,
+  to {
+    stroke: var(--CS1Color);
+  }
+  40% {
+    stroke: var(--CS1Color);
+  }
+  66% {
+    stroke: var(--CS1Color);
+  }
+  80%,
+  90% {
+    stroke: var(--CS1Color);
+  }
+}
+@keyframes MiniLoader_step {
+  0% {
+    opacity: 1;
+  }
+  33% {
+    opacity: 1;
+  }
+  66%,
+  to {
+    opacity: 0.3;
+  }
+}
+.MiniLoader_mini-loader {
+  path {
+    &.MiniLoader_cls-1 {
+      @apply animate-MiniLoader-step-0;
+    }
+  }
+  .MiniLoader_loader-text {
+    text-align: center;
+    display: block;
+    color: var(--eColor);
+    width: 100%;
+    margin-top: 0.7368421053rem;
+    animation: MiniLoader_color 6s ease-in-out infinite;
+    font-size: 0.8421052632rem;
+    margin-left: 0.1052631579rem;
+  }
+}
+.PromotedCoinBadgeWithActions_promotedCoinBadge {
+  display: flex;
+  align-items: center;
+  position: relative;
+  .PromotedCoinBadgeWithActions_name {
+    display: flex;
+    align-items: center;
+  }
+  .PromotedCoinBadgeWithActions_infoWrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    .PromotedCoinBadgeWithActions_coinName {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      word-break: break-all;
+      white-space: normal;
+      width: 100%;
+      font-weight: 500;
+      color: var(--textColor);
+      @media only screen and (max-width: 768px) {
+        font-size: 14px;
+        line-height: 20px;
+      }
+    }
+    .PromotedCoinBadgeWithActions_symbol {
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      word-break: break-all;
+      white-space: normal;
+      margin-left: 8px;
+      font-weight: 400;
+      color: var(--e60Color);
+      max-width: 80px;
+      flex: 0 0 auto;
+    }
+  }
+  .PromotedCoinBadgeWithActions_price {
+    color: var(--textColor);
+    font-weight: 400;
+  }
+  .PromotedCoinBadgeWithActions_promotedWrapper {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    .PromotedCoinBadgeWithActions_promoted {
+      color: var(--e60Color);
+      font-weight: 400;
+      @media only screen and (max-width: 768px) {
+        font-size: 11px;
+        line-height: 16px;
+      }
+    }
+    .PromotedCoinBadgeWithActions_iconMore {
+      color: var(--e60Color);
+    }
+  }
+  .PromotedCoinBadgeWithActions_actionPopupWrapper {
+    .PromotedCoinBadgeWithActions_actionPopup {
+      width: 204px;
+      height: 96px;
+      border-radius: 16px;
+      border: 1px solid var(--e20Color);
+      background: var(--e15Color);
+      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.1);
+      .PromotedCoinBadgeWithActions_actionPopupRow {
+        display: flex;
+      }
+    }
+  }
+  .PromotedCoinBadgeWithActions_coinBadgeIcon {
+    @media only screen and (max-width: 768px) {
+      width: 24px;
+      height: 24px;
+      margin-right: 8px;
+    }
+  }
+}
+.light-mode {
+  .PromotedCoinBadgeWithActions_promotedCoinBadge {
+    .PromotedCoinBadgeWithActions_actionPopupWrapper {
+      .PromotedCoinBadgeWithActions_actionPopup {
+        background: var(--bgColor);
+        border: 1px solid var(--e5Color);
+      }
+    }
+  }
+}
