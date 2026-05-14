@@ -46,6 +46,7 @@ jobs:
           NONE_STRING_TOKEN: '#none'
           TAG_PREFIX: v
           VERBOSE: false
+          GIT_API_TAGGING: false
 
       - name: Build Changelog
         id: changelog
