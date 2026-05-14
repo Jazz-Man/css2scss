@@ -20,7 +20,7 @@
 	},
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["**", "!package.json"]
+		"includes": ["**", "!package.json", "!tests/fixtures"]
 	},
 	"formatter": {
 		"enabled": true,
