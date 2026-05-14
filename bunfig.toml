@@ -18,6 +18,7 @@ optional = true
 dev = true
 peer = true
 auto = "auto"
+linker = "isolated"
 
 [publish]
 # GitHub Packages registry for publishing
