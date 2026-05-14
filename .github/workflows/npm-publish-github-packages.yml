@@ -35,21 +35,40 @@ jobs:
       - name: Run tests
         run: bun test
 
-      - name: Bum new version
+      - name: Bump version and push tag
+        uses: anothrNick/github-tag-action@v1
         id: bump
-        run: |
-          COMMIT_HASH=${{ github.sha }}
-          COMMIT_SHORT=${COMMIT_HASH:0:7}
-          NEW_VERSION="1.0.0-run${{ github.run_number }}+${COMMIT_SHORT}"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAJOR_STRING_TOKEN: '#major'
+          MINOR_STRING_TOKEN: '#minor'
+          PATCH_STRING_TOKEN: '#patch'
+          NONE_STRING_TOKEN: '#none'
+          TAG_PREFIX: v
+          VERBOSE: false
 
+      - name: Build Changelog
+        id: changelog
+        uses: loopwerk/tag-changelog@v1
+        with:
+          token: ${{ github.token }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ github.token }}
+          generate_release_notes: true
+          append_body: true
+          make_latest: true
+          tag_name: ${{ steps.bump.outputs.tag }}
+          name: ${{ steps.bump.outputs.tag }}
+          body: ${{ steps.changelog.outputs.changelog }}
 
       - name: Bump version and publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          npm version ${{ steps.bump.outputs.version }} --no-git-tag-version
-
           bun publish \
+            --tag ${{ steps.bump.outputs.tag }} \
             --tolerate-republish \
             --production
