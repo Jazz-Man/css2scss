@@ -8,9 +8,9 @@ import util from "node:util";
  */
 export default function debug(object, options = {}) {
 	const debug = util.inspect(object, {
-		showHidden: false,
 		colors: true,
 		depth: 2,
+		showHidden: false,
 		...options,
 	});
 
