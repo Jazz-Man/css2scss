@@ -2,8 +2,8 @@
 .github
 .zed
 CLAUDE.md
-QWEN.md
 tests
 css2scss
 data
 test.js
+biome.json
